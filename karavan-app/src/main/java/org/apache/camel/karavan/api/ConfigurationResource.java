@@ -18,14 +18,13 @@ package org.apache.camel.karavan.api;
 
 import org.apache.camel.karavan.model.KaravanConfiguration;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
-import org.jboss.resteasy.reactive.RestResponse;
 
 import javax.inject.Inject;
 import javax.ws.rs.GET;
 import javax.ws.rs.Path;
 import javax.ws.rs.Produces;
 import javax.ws.rs.core.MediaType;
-import java.util.List;
+import javax.ws.rs.core.Response;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -35,22 +34,20 @@ public class ConfigurationResource {
     @ConfigProperty(name = "karavan.version")
     String version;
 
-    @ConfigProperty(name = "karavan.mode")
-    String mode;
 
     @Inject
     KaravanConfiguration configuration;
 
     @GET
     @Produces(MediaType.APPLICATION_JSON)
-    public RestResponse<Map<String, Object>> getConfiguration() throws Exception {
-        return RestResponse.ResponseBuilder.ok(
+    public Response getConfiguration() throws Exception {
+        return Response.ok(
                 Map.of(
                         "version", version,
-                        "mode", mode,
-                        "environments", configuration.environments().stream().map(e -> e.name()).collect(Collectors.toList()),
-                        "defaultRuntime", configuration.defaultRuntime(),
-                        "groupId", configuration.groupId()
+                        "environments", configuration.environments().stream()
+                                        .filter(e -> e.active())
+                                .map(e -> e.name()).collect(Collectors.toList()),
+                        "runtime", configuration.runtime()
                 )
         ).build();
     }

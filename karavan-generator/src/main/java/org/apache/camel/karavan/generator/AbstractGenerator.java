@@ -25,8 +25,14 @@ import org.apache.camel.catalog.CamelCatalog;
 import org.apache.camel.dsl.yaml.YamlRoutesBuilderLoader;
 
 import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
+import java.io.File;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -41,7 +47,7 @@ public class AbstractGenerator {
 
     protected String getCamelYamlDSL() {
         try {
-            InputStream inputStream = YamlRoutesBuilderLoader.class.getResourceAsStream("/camelYamlDsl.json");
+            InputStream inputStream = YamlRoutesBuilderLoader.class.getResourceAsStream("/schema/camelYamlDsl.json");
             String data = new BufferedReader(new InputStreamReader(inputStream))
                     .lines().collect(Collectors.joining(System.getProperty("line.separator")));
             return data;
@@ -64,6 +70,16 @@ public class AbstractGenerator {
     protected String readFileText(String template) {
         Buffer templateBuffer = vertx.fileSystem().readFileBlocking(template);
         return templateBuffer.toString();
+    }
+
+    protected void saveFile(String folder, String fileName, String text) {
+//        LOGGER.info("Creating component " + fileName);
+        try {
+            File targetFile = Paths.get(folder, fileName).toFile();
+            Files.copy(new ByteArrayInputStream(text.getBytes()), targetFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 
     protected void writeFileText(String filePath, String data) {

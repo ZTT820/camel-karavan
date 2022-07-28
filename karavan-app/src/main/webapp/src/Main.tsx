@@ -23,7 +23,6 @@ import {ComponentApi} from "karavan-core/lib/api/ComponentApi";
 import Icon from "./Logo";
 import {ComponentsPage} from "./components/ComponentsPage";
 import {EipPage} from "./eip/EipPage";
-import {OpenApiPage} from "./integrations/OpenApiPage";
 import {ProjectsPage} from "./projects/ProjectsPage";
 import {Project} from "./models/ProjectModels";
 import {ProjectPage} from "./projects/ProjectPage";
@@ -232,8 +231,6 @@ export class Main extends React.Component<Props, State> {
                         {this.state.pageId === 'kamelets' && <KameletsPage dark={false}/>}
                         {this.state.pageId === 'components' && <ComponentsPage dark={false}/>}
                         {this.state.pageId === 'eip' && <EipPage dark={false}/>}
-                        {this.state.pageId === 'openapi' &&
-                            <OpenApiPage dark={false} openapi={this.state.openapi} filename={this.state.filename}/>}
                     </FlexItem>
                 </Flex>
                 <Modal
@@ -247,7 +244,7 @@ export class Main extends React.Component<Props, State> {
                                 onClick={e => this.setState({isModalOpen: false})}>Cancel</Button>
                     ]}
                     onEscapePress={e => this.setState({isModalOpen: false})}>
-                    <div>{"Are you sure you want to delete the project " + this.state.projectToDelete?.getKey() + "?"}</div>
+                    <div>{"Are you sure you want to delete the project " + this.state.projectToDelete?.projectId + "?"}</div>
                 </Modal>
                 {this.state.alerts.map((e: ToastMessage) => (
                     <Alert key={e.id} className="main-alert" variant={e.variant} title={e.title}

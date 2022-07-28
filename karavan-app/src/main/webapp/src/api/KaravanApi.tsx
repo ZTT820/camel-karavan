@@ -1,5 +1,5 @@
 import axios, {AxiosResponse} from "axios";
-import {Project, ProjectFile} from "../models/ProjectModels";
+import {Project, ProjectFile, ProjectStatus} from "../models/ProjectModels";
 
 export const KaravanApi = {
 
@@ -15,8 +15,20 @@ export const KaravanApi = {
         });
     },
 
-    getProject: async (name: string, after: (project: Project) => void) => {
-        axios.get('/project/' + name,
+    getProject: async (projectId: string, after: (project: Project) => void) => {
+        axios.get('/project/' + projectId,
+            {headers: {'Accept': 'application/json', 'username': 'cameleer'}})
+            .then(res => {
+                if (res.status === 200) {
+                    after(res.data);
+                }
+            }).catch(err => {
+            console.log(err);
+        });
+    },
+
+    getProjectStatus: async (projectId: string, after: (status: ProjectStatus) => void) => {
+        axios.get('/status/project/' + projectId,
             {headers: {'Accept': 'application/json', 'username': 'cameleer'}})
             .then(res => {
                 if (res.status === 200) {
@@ -60,7 +72,7 @@ export const KaravanApi = {
     },
 
     deleteProject: async (project: Project, after: (res: AxiosResponse<any>) => void) => {
-        axios.delete('/project/' + encodeURI(project.getKey()),
+        axios.delete('/project/' + encodeURI(project.projectId),
             {headers:{'username': 'cameleer'}})
             .then(res => {
                 after(res);
@@ -92,7 +104,7 @@ export const KaravanApi = {
     },
 
     deleteProjectFile: async (file: ProjectFile, after: (res: AxiosResponse<any>) => void) => {
-        axios.delete('/file/' + file.project + '/' + file.name,
+        axios.delete('/file/' + file.projectId + '/' + file.name,
             {headers:{'username': 'cameleer'}})
             .then(res => {
                 after(res);
@@ -110,6 +122,107 @@ export const KaravanApi = {
             after(err);
         });
     },
+
+    pipelineRun: async (project: Project, environment: string, after: (res: AxiosResponse<any>) => void) => {
+        axios.post('/kubernetes/pipeline/' + environment, project,
+            {headers: {'Accept': 'application/json', 'Content-Type': 'application/json', 'username': 'cameleer'}})
+            .then(res => {
+                after(res);
+            }).catch(err => {
+            after(err);
+        });
+    },
+
+    getPipelineLog: async (environment: string, pipelineRunName: string, after: (res: AxiosResponse<any>) => void) => {
+        axios.get('/kubernetes/pipeline/log/' + environment + "/" + pipelineRunName,
+            {headers: {'Accept': 'application/json', 'Content-Type': 'application/json', 'username': 'cameleer'}})
+            .then(res => {
+                if (res.status === 200) {
+                    after(res.data);
+                }
+            }).catch(err => {
+            console.log(err);
+        });
+    },
+
+    getContainerLog: async (environment: string, name: string, after: (res: AxiosResponse<string>) => void) => {
+        axios.get('/kubernetes/container/log/' + environment + "/" + name,
+            {headers: {'Accept': 'application/json', 'Content-Type': 'application/json', 'username': 'cameleer'}})
+            .then(res => {
+                if (res.status === 200) {
+                    after(res.data);
+                }
+            }).catch(err => {
+            console.log(err);
+        });
+    },
+
+    rolloutDeployment: async (name: string, environment: string, after: (res: AxiosResponse<any>) => void) => {
+        axios.post('/kubernetes/deployment/rollout/' + environment + '/' + name, "",
+            {headers: {'Accept': 'application/json', 'Content-Type': 'application/json', 'username': 'cameleer'}})
+            .then(res => {
+                after(res);
+            }).catch(err => {
+            after(err);
+        });
+    },
+
+    deleteDeployment: async (environment: string, name: string, after: (res: AxiosResponse<any>) => void) => {
+        axios.delete('/kubernetes/deployment/' + environment + '/' + name,
+            {headers: {'Accept': 'application/json', 'Content-Type': 'application/json', 'username': 'cameleer'}})
+            .then(res => {
+                after(res);
+            }).catch(err => {
+            after(err);
+        });
+    },
+
+    deletePod: async (environment: string, name: string, after: (res: AxiosResponse<any>) => void) => {
+        axios.delete('/kubernetes/pod/' + environment + '/' + name,
+            {headers: {'Accept': 'application/json', 'Content-Type': 'application/json', 'username': 'cameleer'}})
+            .then(res => {
+                after(res);
+            }).catch(err => {
+            after(err);
+        });
+    },
+
+    getConfigMaps: async (environment: string, after: (any: []) => void) => {
+        axios.get('/kubernetes/configmap/' + environment,
+            {headers: {'Accept': 'application/json', 'Content-Type': 'application/json', 'username': 'cameleer'}})
+            .then(res => {
+                if (res.status === 200) {
+                    after(res.data);
+                }
+            }).catch(err => {
+            console.log(err);
+        });
+    },
+
+    getSecrets: async (environment: string, after: (any: []) => void) => {
+        axios.get('/kubernetes/secret/' + environment,
+            {headers: {'Accept': 'application/json', 'Content-Type': 'application/json', 'username': 'cameleer'}})
+            .then(res => {
+                if (res.status === 200) {
+                    after(res.data);
+                }
+            }).catch(err => {
+            console.log(err);
+        });
+    },
+
+    getServices: async (environment: string, after: (any: []) => void) => {
+        axios.get('/kubernetes/service/' + environment,
+            {headers: {'Accept': 'application/json', 'Content-Type': 'application/json', 'username': 'cameleer'}})
+            .then(res => {
+                if (res.status === 200) {
+                    after(res.data);
+                }
+            }).catch(err => {
+            console.log(err);
+        });
+    },
+
 
     getKameletNames: async (after: (names: []) => void) => {
         axios.get('/kamelet',
@@ -181,10 +294,10 @@ export const KaravanApi = {
         });
     },
 
-    postOpenApi: async (name: string, json: string, generateRest: boolean, generateRoutes: boolean, integrationName: string,  after: (res: AxiosResponse<any>) => void) => {
-        const uri = `/openapi/${name}/${generateRest}/${generateRoutes}/${integrationName}`;
-        axios.post(encodeURI(uri), json,
-            {headers: {'Accept': 'text/plain', 'Content-Type': 'text/plain', 'username': 'cameleer'}})
+    postOpenApi: async (file: ProjectFile, generateRest: boolean, generateRoutes: boolean, integrationName: string,  after: (res: AxiosResponse<any>) => void) => {
+        const uri = `/file/openapi/${generateRest}/${generateRoutes}/${integrationName}`;
+        axios.post(encodeURI(uri), file,
+            {headers: {'Accept': 'application/json', 'Content-Type': 'application/json', 'username': 'cameleer'}})
             .then(res => {
                 after(res);
             }).catch(err => {

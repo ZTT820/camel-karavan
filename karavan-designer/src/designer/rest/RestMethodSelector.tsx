@@ -17,14 +17,13 @@
 import React from 'react';
 import {
     Badge,
-    Card, CardBody, CardFooter, CardHeader, Form, FormGroup, Gallery, PageSection,
+    Card, CardBody, CardFooter, CardHeader, Gallery, PageSection,
     Tab, Tabs, TabTitleText,
-    Text, TextInput,
+    Text
 } from '@patternfly/react-core';
 import '../karavan.css';
-import {camelIcon, CamelUi} from "../utils/CamelUi";
+import {CamelUi} from "../utils/CamelUi";
 import {DslMetaModel} from "../utils/DslMetaModel";
-import {CamelUtil} from "karavan-core/lib/api/CamelUtil";
 
 interface Props {
     onMethodSelect: (method: DslMetaModel) => void

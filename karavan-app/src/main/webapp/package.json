@@ -1,6 +1,6 @@
 {
   "name": "karavan",
-  "version": "0.0.16",
+  "version": "3.18.0",
   "private": true,
   "scripts": {
     "copy-designer": "cp -r ../../../../karavan-designer/src/designer src && cp -r ../../../../karavan-designer/src/kamelets src && cp -r ../../../../karavan-designer/src/components src && cp -r ../../../../karavan-designer/src/eip src && cp -r ../../../../karavan-designer/src/builder src",
@@ -29,6 +29,7 @@
   "dependencies": {
     "@monaco-editor/react": "4.3.1",
     "@patternfly/patternfly": "4.194.4",
+    "@patternfly/react-charts": "^6.74.3",
     "@patternfly/react-core": "4.214.1",
     "@patternfly/react-table": "^4.83.1",
     "@reactour/tour": "^2.10.2",

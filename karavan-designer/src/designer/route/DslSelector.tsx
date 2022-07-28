@@ -17,21 +17,23 @@
 import React from 'react';
 import {
     Badge,
-    Card, CardBody, CardFooter, CardHeader, Form, FormGroup, Gallery, PageSection,
+    Card, CardBody, CardFooter, CardHeader, Flex, FlexItem, Form, FormGroup, Gallery, Modal, PageSection,
     Tab, Tabs, TabTitleText,
     Text, TextInput,
 } from '@patternfly/react-core';
 import '../karavan.css';
-import {camelIcon, CamelUi} from "../utils/CamelUi";
+import {CamelUi} from "../utils/CamelUi";
 import {DslMetaModel} from "../utils/DslMetaModel";
 import {CamelUtil} from "karavan-core/lib/api/CamelUtil";
 
 interface Props {
     onDslSelect: (dsl: DslMetaModel, parentId: string, position?: number | undefined) => void,
+    onClose?: () => void,
     parentId: string,
     parentDsl?: string,
     showSteps: boolean,
     dark: boolean,
+    isOpen: boolean,
     position?: number
     tabIndex?: string | number
 }
@@ -43,12 +45,19 @@ interface State {
 
 export class DslSelector extends React.Component<Props, State> {
 
+    getDefaultTabIndex = () => {
+        const x = CamelUi.getSelectorModelTypes(this.props.parentDsl, this.props.showSteps);
+        if (x.length > 0) return x[0][0]
+        else return '';
+    }
+
     public state: State = {
-        tabIndex: this.props.tabIndex ? this.props.tabIndex : CamelUi.getSelectorModelTypes(this.props.parentDsl, this.props.showSteps)[0][0],
-    };
+        tabIndex: this.props.tabIndex ? this.props.tabIndex : this.getDefaultTabIndex(),
+    }
 
 
     selectTab = (evt: React.MouseEvent<HTMLElement, MouseEvent>, eventKey: string | number) => {
+        console.log(eventKey)
         this.setState({tabIndex: eventKey})
     }
 
@@ -103,7 +112,8 @@ export class DslSelector extends React.Component<Props, State> {
                         </div>}
                     {dsl.navigation.toLowerCase() === "component"
                         && <div className="footer" style={{justifyContent: "flex-start"}}>
-                            {dsl.labels.split(',').map((s: string) => <Badge key={s} isRead className="labels">{s}</Badge>)}
+                            {dsl.labels.split(',').map((s: string,  i: number) => <Badge key={s + i} isRead
+                                                                                         className="labels">{s}</Badge>)}
                             <Badge isRead className="version">{dsl.version}</Badge>
                         </div>
                     }
@@ -114,26 +124,49 @@ export class DslSelector extends React.Component<Props, State> {
 
     render() {
         const parentDsl = this.props.parentDsl;
+        const title = parentDsl === undefined ? "Select source/from" : "Select step";
+        const labelText: string = this.state.tabIndex ? this.state.tabIndex.toString() : "";
         return (
-            <PageSection variant={this.props.dark ? "darker" : "light"}>
-                {this.searchInput()}
-                <Tabs data-tour="selector-tabs" style={{overflow: 'hidden'}} activeKey={this.state.tabIndex} onSelect={this.selectTab}>
-                    {CamelUi.getSelectorModelTypes(parentDsl, this.props.showSteps).map((label: [string, number], index: number) => {
-                        const labelText = label[0];
-                        const count = label[1];
-                        const title = ['kamelet', 'component'].includes(labelText.toLowerCase()) ? labelText+"s (" + count + ")" : labelText;
-                        return (
-                            <Tab eventKey={labelText} key={"tab-" + labelText} title={<TabTitleText>{CamelUtil.capitalizeName(title)}</TabTitleText>}>
-                                <Gallery key={"gallery-" + labelText} hasGutter className="dsl-gallery">
-                                    {CamelUi.getSelectorModelsForParentFiltered(parentDsl, labelText, this.props.showSteps)
-                                        .filter((dsl: DslMetaModel) => this.checkFilter(dsl))
-                                        .map((dsl: DslMetaModel, index: number) => this.getCard(dsl, index))}
-                                </Gallery>
-                            </Tab>
-                        )
-                    })}
-                </Tabs>
-            </PageSection>
-        );
+            <Modal
+                aria-label={title}
+                data-tour="selector"
+                width={'90%'}
+                className='dsl-modal'
+                isOpen={this.props.isOpen}
+                onClose={this.props.onClose}
+                header={
+                    <Flex direction={{default: "column"}}>
+                        <FlexItem>
+                            <h3>{title}</h3>
+                            {this.searchInput()}
+                        </FlexItem>
+                        <FlexItem>
+                            <Tabs data-tour="selector-tabs" style={{overflow: 'hidden'}} activeKey={this.state.tabIndex}
+                                  onSelect={this.selectTab}>
+                                {CamelUi.getSelectorModelTypes(parentDsl, this.props.showSteps).map((label: [string, number], index: number) => {
+                                    const labelText = label[0];
+                                    const count = label[1];
+                                    const title = ['kamelet', 'component'].includes(labelText.toLowerCase()) ? labelText + "s (" + count + ")" : labelText;
+                                    return (
+                                        <Tab eventKey={labelText} key={"tab-" + labelText}
+                                             title={<TabTitleText>{CamelUtil.capitalizeName(title)}</TabTitleText>}>
+                                        </Tab>
+                                    )
+                                })}
+                            </Tabs>
+                        </FlexItem>
+                    </Flex>
+                }
+                actions={{}}>
+                <PageSection variant={this.props.dark ? "darker" : "light"}>
+
+                    <Gallery key={"gallery-" + labelText} hasGutter className="dsl-gallery">
+                        {CamelUi.getSelectorModelsForParentFiltered(parentDsl, labelText, this.props.showSteps)
+                            .filter((dsl: DslMetaModel) => this.checkFilter(dsl))
+                            .map((dsl: DslMetaModel, index: number) => this.getCard(dsl, index))}
+                    </Gallery>
+                </PageSection>
+            </Modal>
+        )
     }
 }

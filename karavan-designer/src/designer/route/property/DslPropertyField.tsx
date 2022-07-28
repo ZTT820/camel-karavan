@@ -23,7 +23,7 @@ import {
     Select,
     SelectVariant,
     SelectDirection,
-    SelectOption, ExpandableSection, TextArea, Chip, TextInputGroup, TextInputGroupMain, TextInputGroupUtilities, ChipGroup, Button, Text, Tooltip, Card
+    SelectOption, ExpandableSection, TextArea, Chip, TextInputGroup, TextInputGroupMain, TextInputGroupUtilities, ChipGroup, Button, Text, Tooltip, Card, InputGroup, Modal
 } from '@patternfly/react-core';
 import '../../karavan.css';
 import "@patternfly/patternfly/patternfly.css";
@@ -45,6 +45,11 @@ import {CamelDefinitionApi} from "karavan-core/lib/api/CamelDefinitionApi";
 import AddIcon from "@patternfly/react-icons/dist/js/icons/plus-circle-icon";
 import {MediaTypes} from "../../utils/MediaTypes";
 import {ComponentProperty} from "karavan-core/lib/model/ComponentModels";
+import CompressIcon from "@patternfly/react-icons/dist/js/icons/compress-icon";
+import ExpandIcon from "@patternfly/react-icons/dist/js/icons/expand-icon";
+import KubernetesIcon from "@patternfly/react-icons/dist/js/icons/openshift-icon";
+import {KubernetesSelector} from "./KubernetesSelector";
+import {KubernetesAPI} from "../../utils/KubernetesAPI";
 
 interface Props {
     property: PropertyMeta,
@@ -55,13 +60,16 @@ interface Props {
     onParameterChange?: (parameter: string, value: string | number | boolean | any, pathParameter?: boolean, newRoute?: RouteToCreate) => void,
     element?: CamelElement
     integration: Integration,
-    hideLabel?: boolean
+    hideLabel?: boolean,
 }
 
 interface State {
     selectStatus: Map<string, boolean>,
-    isShowAdvanced: Map<string, boolean>
-    arrayValues: Map<string, string>
+    isShowAdvanced: Map<string, boolean>,
+    arrayValues: Map<string, string>,
+    showEditor: boolean
+    showKubernetesSelector: boolean
+    kubernetesSelectorProperty?: string
 }
 
 export class DslPropertyField extends React.Component<Props, State> {
@@ -70,7 +78,9 @@ export class DslPropertyField extends React.Component<Props, State> {
         selectStatus: new Map<string, boolean>(),
         arrayValues: new Map<string, string>(),
         isShowAdvanced: new Map<string, boolean>(),
-    }
+        showEditor: false,
+        showKubernetesSelector: false,
+    };
 
     openSelect = (propertyName: string, isExpanded: boolean) => {
         this.setState({selectStatus: new Map<string, boolean>([[propertyName, isExpanded]])});
@@ -140,15 +150,66 @@ export class DslPropertyField extends React.Component<Props, State> {
         return property.name === 'uri' && !['ToDynamicDefinition', 'WireTapDefinition'].includes(dslName)
     }
 
-    getTextField = (property: PropertyMeta, value: any) => {
+    selectKubernetes = (value: string) => {
+        const propertyName = this.state.kubernetesSelectorProperty;
+        if (propertyName) {
+            if (value.startsWith("config") || value.startsWith("secret")) value = "{{" + value + "}}";
+            this.propertyChanged(propertyName, value);
+            this.setState({showKubernetesSelector: false, kubernetesSelectorProperty: undefined})
+        }
+    }
+
+    openKubernetesSelector = (propertyName: string) => {
+        this.setState({kubernetesSelectorProperty: propertyName, showKubernetesSelector: true});
+    }
+
+    closeKubernetesSelector = () => {
+        this.setState({showKubernetesSelector: false})
+    }
+
+    getKubernetesSelectorModal() {
         return (
-            <TextInput
+            <KubernetesSelector
+                dark={false}
+                isOpen={this.state.showKubernetesSelector}
+                onClose={() => this.closeKubernetesSelector()}
+                onSelect={this.selectKubernetes}/>)
+    }
+
+    getStringInput = (property: PropertyMeta, value: any) => {
+        const showEditor = this.state.showEditor;
+        const inKubernetes = KubernetesAPI.inKubernetes;
+        const noKubeSelectorButton = ["uri", "id", "description", "group"].includes(property.name);
+        return (<InputGroup>
+            {inKubernetes && !showEditor && !noKubeSelectorButton &&
+                <Tooltip position="bottom-end" content="Select from Kubernetes">
+                    <Button variant="control" onClick={e => this.openKubernetesSelector(property.name)}>
+                        <KubernetesIcon/>
+                    </Button>
+                </Tooltip>}
+            {(!showEditor || property.secret) && <TextInput
                 className="text-field" isRequired isReadOnly={this.isUriReadOnly(property)}
                 type={['integer', 'number'].includes(property.type) ? 'number' : (property.secret ? "password" : "text")}
                 id={property.name} name={property.name}
                 value={value?.toString()}
                 onChange={e => this.propertyChanged(property.name, ['integer', 'number'].includes(property.type) ? Number(e) : e)}/>
-        )
+            }
+            {showEditor && !property.secret && <TextArea
+                autoResize={true}
+                className="text-field" isRequired isReadOnly={this.isUriReadOnly(property)}
+                type="text"
+                id={property.name} name={property.name}
+                value={value?.toString()}
+                onChange={e => this.propertyChanged(property.name, ['integer', 'number'].includes(property.type) ? Number(e) : e)}/>
+            }
+            {!property.secret &&
+                <Tooltip position="bottom-end" content={showEditor ? "Change to TextField" : "Change to Text Area"}>
+                    <Button variant="control" onClick={e => this.setState({showEditor: !showEditor})}>
+                        {showEditor ? <CompressIcon/> : <ExpandIcon/>}
+                    </Button>
+                </Tooltip>
+            }
+        </InputGroup>)
     }
 
     getTextArea = (property: PropertyMeta, value: any) => {
@@ -181,7 +242,7 @@ export class DslPropertyField extends React.Component<Props, State> {
     }
 
     getSwitch = (property: PropertyMeta, value: any) => {
-        const isChecked = value != undefined ? Boolean(value) : Boolean(property.defaultValue != undefined && property.defaultValue === 'true');
+        const isChecked = value !== undefined ? Boolean(value) : Boolean(property.defaultValue !== undefined && property.defaultValue === 'true');
         return (
             <Switch
                 id={property.name} name={property.name}
@@ -415,15 +476,18 @@ export class DslPropertyField extends React.Component<Props, State> {
     getMainComponentParameters = (properties: ComponentProperty[]) => {
         return (
             <div className="parameters">
-                {properties.map(kp =>
-                    <ComponentParameterField
+                {properties.map(kp => {
+                    // console.log(kp);
+                    // console.log(CamelDefinitionApiExt.getParametersValue(this.props.element, kp.name, kp.kind === 'path'));
+                    return (<ComponentParameterField
                         key={kp.name}
                         property={kp}
                         element={this.props.element}
                         integration={this.props.integration}
                         value={CamelDefinitionApiExt.getParametersValue(this.props.element, kp.name, kp.kind === 'path')}
                         onParameterChange={this.props.onParameterChange}
-                    />)}
+                    />)
+                })}
             </div>
         )
     }
@@ -462,10 +526,10 @@ export class DslPropertyField extends React.Component<Props, State> {
                     headerContent={property.displayName}
                     bodyContent={property.description}
                     footerContent={
-                    <div>
-                        {property.defaultValue !== undefined && property.defaultValue.toString().trim().length >0 && <div>{"Default: " + property.defaultValue}</div>}
-                        {property.required && <b>Required</b>}
-                    </div>
+                        <div>
+                            {property.defaultValue !== undefined && property.defaultValue.toString().trim().length > 0 && <div>{"Default: " + property.defaultValue}</div>}
+                            {property.required && <b>Required</b>}
+                        </div>
                     }>
                     <button type="button" aria-label="More info" onClick={e => {
                         e.preventDefault();
@@ -483,7 +547,7 @@ export class DslPropertyField extends React.Component<Props, State> {
         return ['string'].includes(property.type) && property.name !== 'expression' && property.isArray && !property.enumVals;
     }
 
-    getComponentParameters (property: PropertyMeta) {
+    getComponentParameters(property: PropertyMeta) {
         const properties = CamelUtil.getComponentProperties(this.props.element);
         const propertiesMain = properties.filter(p => !p.label.includes("advanced") && !p.label.includes("security") && !p.label.includes("scheduler"));
         const propertiesAdvanced = properties.filter(p => p.label.includes("advanced"));
@@ -492,11 +556,11 @@ export class DslPropertyField extends React.Component<Props, State> {
         return (
             <>
                 {property.name === 'parameters' && this.getMainComponentParameters(propertiesMain)}
-                {property.name === 'parameters' && this.props.element && propertiesScheduler.length >0
+                {property.name === 'parameters' && this.props.element && propertiesScheduler.length > 0
                     && this.getExpandableComponentParameters(propertiesScheduler, "Scheduler parameters")}
-                {property.name === 'parameters' && this.props.element && propertiesSecurity.length >0
+                {property.name === 'parameters' && this.props.element && propertiesSecurity.length > 0
                     && this.getExpandableComponentParameters(propertiesSecurity, "Security parameters")}
-                {property.name === 'parameters' && this.props.element && propertiesAdvanced.length >0
+                {property.name === 'parameters' && this.props.element && propertiesAdvanced.length > 0
                     && this.getExpandableComponentParameters(propertiesAdvanced, "Advanced parameters")}
             </>
         )
@@ -507,41 +571,43 @@ export class DslPropertyField extends React.Component<Props, State> {
         const property: PropertyMeta = this.props.property;
         const value = this.props.value;
         return (
-            <FormGroup
-                data-tour={property.name}
-                label={this.props.hideLabel ? undefined : this.getLabel(property, value)}
-                isRequired={property.required}
-                fieldId={property.name}
-                labelIcon={this.getLabelIcon(property)}>
-                {value && ["ExpressionDefinition", "ExpressionSubElementDefinition"].includes(property.type)
-                    && this.getExpressionField(property, value)}
-                {property.isObject && !property.isArray && !["ExpressionDefinition", "ExpressionSubElementDefinition"].includes(property.type)
-                    && this.getObjectField(property, value)}
-                {property.isObject && property.isArray && !this.isMultiValueField(property)
-                    && this.getMultiValueObjectField(property, value)}
-                {property.name === 'expression' && property.type === "string" && !property.isArray
-                    && this.getTextArea(property, value)}
-                {this.canBeInternalUri(property, this.props.element)
-                    && this.getInternalUriSelect(property, value)}
-                {this.canBeMediaType(property, this.props.element)
-                    && this.getMediaTypeSelect(property, value)}
-                {['string', 'duration', 'integer', 'number'].includes(property.type) && property.name !== 'expression' && !property.name.endsWith("Ref")
-                    && !property.isArray && !property.enumVals
-                    && !this.canBeInternalUri(property, this.props.element)
-                    && !this.canBeMediaType(property, this.props.element)
-                    && this.getTextField(property, value)}
-                {['string'].includes(property.type) && property.name.endsWith("Ref") && !property.isArray && !property.enumVals
-                    && this.getSelectBean(property, value)}
-                {this.isMultiValueField(property)
-                    && this.getMultiValueField(property, value)}
-                {property.type === 'boolean'
-                    && this.getSwitch(property, value)}
-                {property.enumVals
-                    && this.getSelect(property, value)}
-                {isKamelet && property.name === 'parameters' && this.getKameletParameters()}
-                {!isKamelet && property.name === 'parameters' && this.getComponentParameters(property)}
-
-            </FormGroup>
+            <div>
+                <FormGroup
+                    data-tour={property.name}
+                    label={this.props.hideLabel ? undefined : this.getLabel(property, value)}
+                    isRequired={property.required}
+                    fieldId={property.name}
+                    labelIcon={this.getLabelIcon(property)}>
+                    {value && ["ExpressionDefinition", "ExpressionSubElementDefinition"].includes(property.type)
+                        && this.getExpressionField(property, value)}
+                    {property.isObject && !property.isArray && !["ExpressionDefinition", "ExpressionSubElementDefinition"].includes(property.type)
+                        && this.getObjectField(property, value)}
+                    {property.isObject && property.isArray && !this.isMultiValueField(property)
+                        && this.getMultiValueObjectField(property, value)}
+                    {property.name === 'expression' && property.type === "string" && !property.isArray
+                        && this.getTextArea(property, value)}
+                    {this.canBeInternalUri(property, this.props.element)
+                        && this.getInternalUriSelect(property, value)}
+                    {this.canBeMediaType(property, this.props.element)
+                        && this.getMediaTypeSelect(property, value)}
+                    {['string', 'duration', 'integer', 'number'].includes(property.type) && property.name !== 'expression' && !property.name.endsWith("Ref")
+                        && !property.isArray && !property.enumVals
+                        && !this.canBeInternalUri(property, this.props.element)
+                        && !this.canBeMediaType(property, this.props.element)
+                        && this.getStringInput(property, value)}
+                    {['string'].includes(property.type) && property.name.endsWith("Ref") && !property.isArray && !property.enumVals
+                        && this.getSelectBean(property, value)}
+                    {this.isMultiValueField(property)
+                        && this.getMultiValueField(property, value)}
+                    {property.type === 'boolean'
+                        && this.getSwitch(property, value)}
+                    {property.enumVals
+                        && this.getSelect(property, value)}
+                    {isKamelet && property.name === 'parameters' && this.getKameletParameters()}
+                    {!isKamelet && property.name === 'parameters' && this.getComponentParameters(property)}
+                </FormGroup>
+                {this.getKubernetesSelectorModal()}
+            </div>
         )
     }
 }
