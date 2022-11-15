@@ -14,16 +14,17 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import { workspace, window, Terminal } from "vscode";
+import { workspace, window, Terminal, ThemeIcon } from "vscode";
 import * as path from "path";
 import * as shell from 'shelljs';
-import { CamelDefinitionYaml } from "karavan-core/lib/api/CamelDefinitionYaml";
+import { CamelDefinitionYaml } from "core/api/CamelDefinitionYaml";
 import * as utils from "./utils";
+import * as exec from "./exec";
 
 const TERMINALS: Map<string, Terminal> = new Map<string, Terminal>();
 
 export async function camelJbangGenerate(rootPath: string, openApiFullPath: string, fullPath: string, add: boolean, crd?: boolean, generateRoutes?: boolean) {
-    let command = prepareCommand("generate rest -i " + openApiFullPath, "application"); // TODO: set profile configurable
+    let command = prepareCommand("generate rest -i " + openApiFullPath);
     if (generateRoutes === true) command = command + " --routes";
     executeJbangCommand(rootPath, command, (code, stdout, stderr) => {
         console.log('Exit code:', code);
@@ -55,7 +56,7 @@ export function createYaml(filename: string, restYaml: string, camelYaml?: strin
         return CamelDefinitionYaml.integrationToYaml(i);
     } else if (crd === true) {
         const i = CamelDefinitionYaml.yamlToIntegration(filename, restYaml);
-        i.crd = true;
+        i.type = 'crd';
         return CamelDefinitionYaml.integrationToYaml(i);
     } else {
         return restYaml;
@@ -63,7 +64,7 @@ export function createYaml(filename: string, restYaml: string, camelYaml?: strin
 }
 
 export function camelJbangPackage(rootPath: string, profile: string, callback: (code: number) => any) {
-    executeJbangCommand(rootPath, prepareCommand("package uber-jar", profile), (code, stdout, stderr) => callback(code));
+    executeJbangCommand(rootPath, prepareCommand("package uber-jar"), (code, stdout, stderr) => callback(code));
 }
 
 
@@ -71,17 +72,20 @@ export function cacheClear(rootPath: string, callback: (code: number) => any) {
     executeJbangCommand(rootPath, "jbang cache clear", (code, stdout, stderr) => callback(code));
 }
 
-function prepareCommand(command: string, profile?: string): string {
+function prepareCommand(command: string): string {
     const version = workspace.getConfiguration().get("camel.version");
-    const p = profile ? " --profile " + profile : "";
-    return "jbang -Dcamel.jbang.version=" + version + " camel@apache/camel " + command + p;
+    return "jbang -Dcamel.jbang.version=" + version + " camel@apache/camel " + command;
 }
 
-export function camelJbangRun(rootPath: string, profile?: string, filename?: string) {
+export function camelJbangRun(filename?: string) {
     const maxMessages: number = workspace.getConfiguration().get("camel.maxMessages") || -1;
-    const cmd = (filename ? "run " + filename : "run * ") + (maxMessages > -1 ? " --max-messages=" + maxMessages : "");
-    const command = prepareCommand(cmd, profile);
-    const terminalId = "run_" + profile + "_" + filename;
+    const kameletsPath: string | undefined = workspace.getConfiguration().get("Karavan.kameletsPath");
+    const dev: boolean = workspace.getConfiguration().get("camel.dev") || false;
+    const cmd = (filename ? "run " + filename : "run * ")
+        + (maxMessages > -1 ? " --max-messages=" + maxMessages : "")
+        + (kameletsPath && kameletsPath.trim().length > 0 ? " --local-kamelet-dir=" + kameletsPath : "");
+    const command = prepareCommand(cmd) + (dev === true ? " --dev" : "");
+    const terminalId = "run_" + filename;
     const existTerminal = TERMINALS.get(terminalId);
     if (existTerminal) existTerminal.dispose();
     const terminal = window.createTerminal('Camel run: ' + filename ? filename : "project");
@@ -90,37 +94,82 @@ export function camelJbangRun(rootPath: string, profile?: string, filename?: str
     terminal.sendText(command);
 }
 
-export function camelJbangExport(runtime: string, directory: string, gav: string) {
-    const cmd = "export " + runtime
-        + (directory !== undefined ? " --directory=" + directory : "")
-        + (gav !== undefined ? " --gav=" + gav : "");
-    const command = prepareCommand(cmd);
-    const terminalId = "export " + runtime;
+export function camelJbangExport() {
+    const command = createExportCommand();
+    const terminalId = "export";
     const existTerminal = TERMINALS.get(terminalId);
     if (existTerminal) existTerminal.dispose();
-    const terminal = window.createTerminal('Camel export');
+    const terminal = window.createTerminal('export');
     TERMINALS.set(terminalId, terminal);
     terminal.show();
     terminal.sendText(command);
 }
 
+export function createExportCommand() {
+    const kameletsPath: string | undefined = workspace.getConfiguration().get("Karavan.kameletsPath");
+    const cmd = "export --fresh " + (kameletsPath && kameletsPath.trim().length > 0 ? " --local-kamelet-dir=" + kameletsPath : "");
+    return prepareCommand(cmd);
+}
+
+export function camelDeploy(directory: string) {
+    Promise.all([
+        utils.getRuntime(),
+        utils.getTarget(),
+        utils.getExportFolder(),
+        exec.execCommand("oc project -q"), // get namespace 
+    ]).then(val => {
+        const runtime = val[0] || '';
+        const target = val[1] || '';
+        const exportFolder = val[2] || '';
+        let env: any = { "DATE": Date.now().toString() };
+        if (target === 'openshift' && val[3].result) {
+            env.NAMESPACE = val[3].value.trim();
+        } else if (target === 'openshift' && val[3].result === undefined) {
+            window.showErrorMessage("Namespace not set \n" + val[3].error);
+        }
+        const deployCommand: string = workspace.getConfiguration().get("Karavan.".concat(runtime.replaceAll("-", "")).concat(utils.capitalize(target)).concat("Deploy")) || '';
+        const command = createExportCommand().concat(" && ").concat(deployCommand).concat(" -f ").concat(exportFolder);
+        camelRunDeploy(command, env);
+    }).catch((reason: any) => {
+        window.showErrorMessage("Error: \n" + reason.message);
+    });
+}
+
+export function camelRunDeploy(command: string, env?: { [key: string]: string | null | undefined }) {
+    const terminalId = "deploy";
+    const existTerminal = TERMINALS.get(terminalId);
+    if (existTerminal) existTerminal.dispose();
+    const terminal = window.createTerminal({ name: terminalId, env: env, iconPath: new ThemeIcon("layers") });
+    TERMINALS.set(terminalId, terminal);
+    terminal.show();
+    terminal.sendText(command);
+}
+
+export function createPackageAndPushImageCommand(directory: string) {
+    return "mvn clean package -f " + directory
+        +  " -Dquarkus.kubernetes.deploy=false"
+        +  " -Dquarkus.container-image.build=true -Dquarkus.container-image.push=true"
+}
+
+export function createPackageAndDeployCommand(directory: string) {
+    return "mvn clean package -f " + directory
+        +  " -Dquarkus.kubernetes.deploy=true -Dquarkus.container-image.registry=image-registry.openshift-image-registry.svc:5000"
+        +  " -Dquarkus.container-image.build=false -Dquarkus.container-image.push=false"
+}
+
 function executeJbangCommand(rootPath: string, command: string, callback: (code: number, stdout: any, stderr: any) => any) {
-    console.log("excute command", command)
+    console.log("excute command", command);
     const jbang = shell.which('jbang');
     if (jbang) {
-        shell.config.execPath = String(jbang);
-        shell.cd(rootPath);
-        shell.exec(command, { async: false }, (code, stdout, stderr) => {
-            if (code === 0) {
-                // vscode.window.showInformationMessage(stdout);
-            } else {
-                window.showErrorMessage(stderr);
-            }
-            callback(code, stdout, stderr);
+        exec.execCommand(command, rootPath).then(res => {
+            if (res.result) callback(0, res.value, res.error)
+            else window.showErrorMessage(res.error);
+        }).catch(error => {
+            window.showErrorMessage(error);
         });
     } else {
         window.showErrorMessage("JBang not found!");
-    }
+    }    
 }
 
 function setMinikubeEnvVariables(env: string): Map<string, string> {
@@ -134,11 +183,4 @@ function setMinikubeEnvVariables(env: string): Map<string, string> {
         map.set(key, value);
     })
     return map;
-}
-
-function removeMinikubeEnvVariables() {
-    delete shell.env['DOCKER_TLS_VERIFY'];
-    delete shell.env['DOCKER_HOST'];
-    delete shell.env['DOCKER_CERT_PATH'];
-    delete shell.env['MINIKUBE_ACTIVE_DOCKERD'];
 }

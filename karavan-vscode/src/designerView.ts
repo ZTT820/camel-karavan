@@ -14,12 +14,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import { workspace, Uri, window, commands, WebviewPanel, ExtensionContext, ViewColumn, WebviewPanelOnDidChangeViewStateEvent } from "vscode";
+import { workspace, Uri, window, commands, WebviewPanel, ExtensionContext, ViewColumn, WebviewPanelOnDidChangeViewStateEvent, FileType } from "vscode";
 import * as path from "path";
 import * as utils from "./utils";
 import * as jbang from "./jbang";
-import { CamelDefinitionYaml } from "karavan-core/lib/api/CamelDefinitionYaml";
-import { Integration } from "karavan-core/lib/model/IntegrationDefinition";
+import { CamelDefinitionYaml } from "core/api/CamelDefinitionYaml";
+import { Integration } from "core/model/IntegrationDefinition";
 
 const KARAVAN_LOADED = "karavan:loaded";
 const KARAVAN_PANELS: Map<string, WebviewPanel> = new Map<string, WebviewPanel>();
@@ -47,26 +47,17 @@ export class DesignerView {
     }
 
     jbangRun(fullPath: string) {
-        const filename = this.getFilename(fullPath);
-        if (filename && this.rootPath) {
-            this.selectProfile(this.rootPath, filename);
-        }
-    }
-
-    getFilename(fullPath: string) {
         if (fullPath.startsWith('webview-panel/webview')) {
-            const filename = Array.from(KARAVAN_PANELS.entries()).filter(({ 1: v }) => v.active).map(([k]) => k)[0];
-            if (filename && this.rootPath) {
-                return filename;
-            }
+            const filename = this.getFilenameFromWebView();
+            jbang.camelJbangRun(filename);
         } else {
             utils.readFile(path.resolve(fullPath)).then(readData => {
                 const yaml = Buffer.from(readData).toString('utf8');
                 const relativePath = utils.getRalativePath(fullPath);
                 const filename = path.basename(fullPath);
                 const integration = utils.parceYaml(filename, yaml);
-                if (integration[0] && this.rootPath) {
-                    return relativePath;
+                if (integration[0] && utils.getRoot() !== undefined) {
+                    jbang.camelJbangRun(relativePath);
                 } else {
                     window.showErrorMessage("File is not Camel Integration!")
                 }
@@ -74,28 +65,17 @@ export class DesignerView {
         }
     }
 
-    selectProfile(rootPath: string, filename?: string) {
-        if (this.rootPath) {
-            utils.getProfiles().then(profiles => {
-                if (profiles && profiles.length > 0) {
-                    window.showQuickPick(profiles).then((profile) => {
-                        if (!profile) {
-                            return
-                        } else {
-                            jbang.camelJbangRun(rootPath, profile, filename);
-                        }
-                    })
-                } else {
-                    jbang.camelJbangRun(rootPath, "application", filename);
-                }
-            });
+    getFilenameFromWebView() {
+        const filename = Array.from(KARAVAN_PANELS.entries()).filter(({ 1: v }) => v.active).map(([k]) => k)[0];
+        if (filename && utils.getRoot() !== undefined) {
+            return filename;
         }
     }
 
-    createIntegration(crd: boolean, rootPath?: string) {
+    createIntegration(type: 'crd' | 'plain' | 'kamelet', rootPath?: string) {
         window
             .showInputBox({
-                title: crd ? "Create Camel Integration CRD" : "Create Camel Integration YAML",
+                title: type === 'crd' ? "Create Camel Integration CRD" : "Create Camel Integration YAML",
                 ignoreFocusOut: true,
                 prompt: "Integration name",
                 validateInput: (text: string): string | undefined => {
@@ -109,7 +89,7 @@ export class DesignerView {
                 if (value) {
                     const name = utils.nameFromTitle(value);
                     const i = Integration.createNew(name);
-                    i.crd = crd;
+                    i.type = type;
                     const yaml = CamelDefinitionYaml.integrationToYaml(i);
                     const filename = name.toLocaleLowerCase().endsWith('.yaml') ? name : name + '.yaml';
                     const relativePath = (this.rootPath ? rootPath?.replace(this.rootPath, "") : rootPath) + path.sep + filename;
@@ -154,9 +134,6 @@ export class DesignerView {
                         case 'getData':
                             this.sendData(panel, filename, relativePath, fullPath, message.reread === true, yaml, tab);
                             break;
-                        case 'disableStartHelp':
-                            utils.disableStartHelp();
-                            break;
                     }
                 },
                 undefined,
@@ -170,7 +147,7 @@ export class DesignerView {
             // Handle reopen
             panel.onDidChangeViewState((e: WebviewPanelOnDidChangeViewStateEvent) => {
                 console.log(e);
-                if (e.webviewPanel.active || e.webviewPanel.reveal) {
+                if (e.webviewPanel.active) {
                     e.webviewPanel.webview.postMessage({ command: 'activate', tab: tab });
                 } else {
                     e.webviewPanel.webview.postMessage({ command: 'deactivate' });
@@ -197,11 +174,8 @@ export class DesignerView {
             panel.webview.postMessage({ command: 'kamelets', kamelets: results[0] });
             // Send components
             panel.webview.postMessage({ command: 'components', components: results[1] });
-            // Send showStartHelp
-            const showStartHelp = workspace.getConfiguration().get("Karavan.showStartHelp");
-            panel.webview.postMessage({ command: 'showStartHelp', showStartHelp: showStartHelp });
             // Send integration
-            this.sendIntegrationData(panel, filename, relativePath, fullPath, reread, yaml, tab)
+            this.sendIntegrationData(panel, filename, relativePath, fullPath, reread, yaml, tab);
         })
     }
 
@@ -220,4 +194,13 @@ export class DesignerView {
 
     }
 
+    downloadImage(fullPath: string) {
+        if (fullPath.startsWith('webview-panel/webview')) {
+            const filename = this.getFilenameFromWebView();
+            if (filename && KARAVAN_PANELS.has(filename)) {
+                const panel = KARAVAN_PANELS.get(filename);
+                panel?.webview.postMessage({ command: 'downloadImage' });
+            }
+        }
+    }
 }

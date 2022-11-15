@@ -16,15 +16,17 @@
  */
 package org.apache.camel.karavan.service;
 
-import io.quarkus.runtime.StartupEvent;
-import io.quarkus.runtime.configuration.ProfileManager;
-import io.vertx.core.eventbus.EventBus;
+import org.apache.camel.karavan.model.CamelStatus;
+import org.apache.camel.karavan.model.DeploymentStatus;
+import org.apache.camel.karavan.model.Environment;
 import org.apache.camel.karavan.model.GroupedKey;
+import org.apache.camel.karavan.model.Kamelet;
+import org.apache.camel.karavan.model.PipelineStatus;
+import org.apache.camel.karavan.model.PodStatus;
 import org.apache.camel.karavan.model.Project;
 import org.apache.camel.karavan.model.ProjectFile;
-import org.apache.camel.karavan.model.ProjectStatus;
+import org.apache.camel.karavan.model.ServiceStatus;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
-import org.infinispan.Cache;
 import org.infinispan.client.hotrod.RemoteCache;
 import org.infinispan.client.hotrod.RemoteCacheManager;
 import org.infinispan.client.hotrod.Search;
@@ -34,14 +36,13 @@ import org.infinispan.commons.configuration.XMLStringConfiguration;
 import org.infinispan.configuration.cache.CacheMode;
 import org.infinispan.configuration.cache.ConfigurationBuilder;
 import org.infinispan.configuration.cache.SingleFileStoreConfigurationBuilder;
-import org.infinispan.configuration.cache.StorageType;
 import org.infinispan.configuration.global.GlobalConfigurationBuilder;
+import org.infinispan.eviction.EvictionStrategy;
 import org.infinispan.manager.DefaultCacheManager;
 import org.infinispan.query.dsl.QueryFactory;
 import org.jboss.logging.Logger;
 
 import javax.enterprise.context.ApplicationScoped;
-import javax.enterprise.event.Observes;
 import javax.inject.Inject;
 import java.util.List;
 import java.util.Map;
@@ -51,22 +52,20 @@ import java.util.stream.Collectors;
 public class InfinispanService {
 
     BasicCache<GroupedKey, Project> projects;
-
     BasicCache<GroupedKey, ProjectFile> files;
-
-    BasicCache<GroupedKey, ProjectStatus> statuses;
+    BasicCache<GroupedKey, PipelineStatus> pipelineStatuses;
+    BasicCache<GroupedKey, DeploymentStatus> deploymentStatuses;
+    BasicCache<GroupedKey, PodStatus> podStatuses;
+    BasicCache<GroupedKey, CamelStatus> camelStatuses;
+    BasicCache<GroupedKey, ServiceStatus> serviceStatuses;
+    BasicCache<String, String> kamelets;
+    BasicCache<String, Environment> environments;
 
     @Inject
     RemoteCacheManager cacheManager;
 
     @Inject
-    GeneratorService generatorService;
-
-    @Inject
-    EventBus bus;
-
-    @ConfigProperty(name = "karavan.config.runtime")
-    String runtime;
+    CodeService codeService;
 
     private static final String CACHE_CONFIG = "<distributed-cache name=\"%s\">"
             + " <encoding media-type=\"application/x-protostream\"/>"
@@ -75,7 +74,7 @@ public class InfinispanService {
 
     private static final Logger LOGGER = Logger.getLogger(KaravanService.class.getName());
 
-    void onStart(@Observes StartupEvent ev) {
+    void start() {
         if (cacheManager == null) {
             LOGGER.info("InfinispanService is starting in local mode");
             GlobalConfigurationBuilder global = GlobalConfigurationBuilder.defaultClusteredBuilder();
@@ -89,46 +88,61 @@ public class InfinispanService {
                     .shared(false)
                     .preload(true)
                     .fetchPersistentState(true);
+            environments = cacheManager.administration().withFlags(CacheContainerAdmin.AdminFlag.VOLATILE).getOrCreateCache(Environment.CACHE, builder.build());
             projects = cacheManager.administration().withFlags(CacheContainerAdmin.AdminFlag.VOLATILE).getOrCreateCache(Project.CACHE, builder.build());
             files = cacheManager.administration().withFlags(CacheContainerAdmin.AdminFlag.VOLATILE).getOrCreateCache(ProjectFile.CACHE, builder.build());
-            statuses = cacheManager.administration().withFlags(CacheContainerAdmin.AdminFlag.VOLATILE).getOrCreateCache(ProjectStatus.CACHE, builder.build());
+            pipelineStatuses = cacheManager.administration().withFlags(CacheContainerAdmin.AdminFlag.VOLATILE).getOrCreateCache(PipelineStatus.CACHE, builder.build());
+            deploymentStatuses = cacheManager.administration().withFlags(CacheContainerAdmin.AdminFlag.VOLATILE).getOrCreateCache(DeploymentStatus.CACHE, builder.build());
+            podStatuses = cacheManager.administration().withFlags(CacheContainerAdmin.AdminFlag.VOLATILE).getOrCreateCache(PodStatus.CACHE, builder.build());
+            serviceStatuses = cacheManager.administration().withFlags(CacheContainerAdmin.AdminFlag.VOLATILE).getOrCreateCache(ServiceStatus.CACHE, builder.build());
+            camelStatuses = cacheManager.administration().withFlags(CacheContainerAdmin.AdminFlag.VOLATILE).getOrCreateCache(CamelStatus.CACHE, builder.build());
+            kamelets = cacheManager.administration().withFlags(CacheContainerAdmin.AdminFlag.VOLATILE).getOrCreateCache(Kamelet.CACHE, builder.build());
+
+            cleanData();
         } else {
             LOGGER.info("InfinispanService is starting in remote mode");
+            environments = cacheManager.administration().getOrCreateCache(Environment.CACHE, new XMLStringConfiguration(String.format(CACHE_CONFIG, Environment.CACHE)));
             projects = cacheManager.administration().getOrCreateCache(Project.CACHE, new XMLStringConfiguration(String.format(CACHE_CONFIG, Project.CACHE)));
             files = cacheManager.administration().getOrCreateCache(ProjectFile.CACHE, new XMLStringConfiguration(String.format(CACHE_CONFIG, ProjectFile.CACHE)));
-            statuses = cacheManager.administration().getOrCreateCache(ProjectFile.CACHE, new XMLStringConfiguration(String.format(CACHE_CONFIG, ProjectStatus.CACHE)));
+            pipelineStatuses = cacheManager.administration().getOrCreateCache(PipelineStatus.CACHE, new XMLStringConfiguration(String.format(CACHE_CONFIG, PipelineStatus.CACHE)));
+            deploymentStatuses = cacheManager.administration().getOrCreateCache(DeploymentStatus.CACHE, new XMLStringConfiguration(String.format(CACHE_CONFIG, DeploymentStatus.CACHE)));
+            podStatuses = cacheManager.administration().getOrCreateCache(PodStatus.CACHE, new XMLStringConfiguration(String.format(CACHE_CONFIG, PodStatus.CACHE)));
+            serviceStatuses = cacheManager.administration().getOrCreateCache(ServiceStatus.CACHE, new XMLStringConfiguration(String.format(CACHE_CONFIG, ServiceStatus.CACHE)));
+            camelStatuses = cacheManager.administration().getOrCreateCache(CamelStatus.CACHE, new XMLStringConfiguration(String.format(CACHE_CONFIG, CamelStatus.CACHE)));
+            kamelets = cacheManager.administration().getOrCreateCache(Kamelet.CACHE, new XMLStringConfiguration(String.format(CACHE_CONFIG, Kamelet.CACHE)));
         }
-        if (getProjects().isEmpty()) {
-            LOGGER.info("No projects found in the Data Grid");
-            bus.publish(KaravanService.IMPORT_PROJECTS, "");
-        }
-        if (ProfileManager.getLaunchMode().isDevOrTest() && getProjects().isEmpty()){
-//            generateDevProjects();
-        }
+//        org.hibernate.search.engine.search.loading.spi.EntityLoader
     }
+
+    private void cleanData() {
+        environments.clear();
+        deploymentStatuses.clear();
+        podStatuses.clear();
+        pipelineStatuses.clear();
+        camelStatuses.clear();
+    }
+
 
     public List<Project> getProjects() {
         return projects.values().stream().collect(Collectors.toList());
     }
 
-    public void saveProject(Project project) {
+    public void saveProject(Project project, boolean imported) {
         GroupedKey key = GroupedKey.create(project.getProjectId(), project.getProjectId());
         boolean isNew = !projects.containsKey(key);
-        project.setRuntime(Project.CamelRuntime.valueOf(runtime));
         projects.put(key, project);
-        if (isNew){
+        if (isNew && !imported){
             String filename = "application.properties";
-            String code = generatorService.getDefaultApplicationProperties(project);
+            String code = codeService.getApplicationProperties(project);
             files.put(new GroupedKey(project.getProjectId(), filename), new ProjectFile(filename, code, project.getProjectId()));
         }
     }
 
     public List<ProjectFile> getProjectFiles(String projectId) {
         if (cacheManager == null) {
-            QueryFactory queryFactory = org.infinispan.query.Search.getQueryFactory((Cache<?, ?>) files);
-            return queryFactory.<ProjectFile>create("FROM org.apache.camel.karavan.model.ProjectFile WHERE projectId = :projectId")
-                    .setParameter("projectId", projectId)
-                    .execute().list();
+            return files.values().stream()
+                    .filter(f -> f.getProjectId().equals(projectId))
+                    .collect(Collectors.toList());
         } else {
             QueryFactory queryFactory = Search.getQueryFactory((RemoteCache<?, ?>) files);
             return queryFactory.<ProjectFile>create("FROM karavan.ProjectFile WHERE projectId = :projectId")
@@ -156,34 +170,138 @@ public class InfinispanService {
         return projects.get(GroupedKey.create(project, project));
     }
 
-    public ProjectStatus getProjectStatus(String projectId) {
-        return statuses.get(GroupedKey.create(projectId, projectId));
+    public PipelineStatus getPipelineStatus(String projectId, String environment) {
+        return pipelineStatuses.get(GroupedKey.create(projectId, environment));
     }
 
-    public void saveProjectStatus(ProjectStatus status) {
-        statuses.put(GroupedKey.create(status.getProjectId(), status.getProjectId()), status);
+    public void savePipelineStatus(PipelineStatus status) {
+        pipelineStatuses.put(GroupedKey.create(status.getProjectId(), status.getEnv()), status);
     }
 
-    private void generateDevProjects() {
-        LOGGER.info("Generate demo projects");
-        for (int i = 0; i < 10; i++){
-            String projectId = "parcel-demo" + i;
-            Project p = new Project(projectId, "Demo project " + i, "Demo project placeholder for UI testing purposes", Project.CamelRuntime.valueOf(runtime));
-            this.saveProject(p);
+    public void deletePipelineStatus(PipelineStatus status) {
+        pipelineStatuses.remove(GroupedKey.create(status.getProjectId(), status.getEnv()));
+    }
 
-            files.put(GroupedKey.create(p.getProjectId(),"new-parcels.yaml"), new ProjectFile("new-parcels.yaml", "flows:", p.getProjectId()));
-            files.put(GroupedKey.create(p.getProjectId(),"parcel-confirmation.yaml"), new ProjectFile("parcel-confirmation.yaml", "rest:", p.getProjectId()));
-            files.put(GroupedKey.create(p.getProjectId(),"CustomProcessor.java"), new ProjectFile("CustomProcessor.java", "import org.apache.camel.BindToRegistry;\n" +
-                    "import org.apache.camel.Exchange;\n" +
-                    "import org.apache.camel.Processor;\n" +
-                    "\n" +
-                    "@BindToRegistry(\"myBean\")\n" +
-                    "public class CustomProcessor implements Processor {\n" +
-                    "\n" +
-                    "  public void process(Exchange exchange) throws Exception {\n" +
-                    "      exchange.getIn().setBody(\"Hello world\");\n" +
-                    "  }\n" +
-                    "}", p.getProjectId()));
+    public DeploymentStatus getDeploymentStatus(String name, String namespace, String cluster) {
+        String deploymentId = name + ":" + namespace + ":" + cluster;
+        return deploymentStatuses.get(GroupedKey.create(name, deploymentId));
+    }
+
+    public void saveDeploymentStatus(DeploymentStatus status) {
+        deploymentStatuses.put(GroupedKey.create(status.getName(), status.getId()), status);
+    }
+
+    public void deleteDeploymentStatus(DeploymentStatus status) {
+        deploymentStatuses.remove(GroupedKey.create(status.getName(), status.getId()));
+    }
+
+    public List<DeploymentStatus> getDeploymentStatuses() {
+        return deploymentStatuses.values().stream().collect(Collectors.toList());
+    }
+
+    public List<DeploymentStatus> getDeploymentStatuses(String env) {
+        if (cacheManager == null) {
+            return  deploymentStatuses.values().stream()
+                    .filter(s -> s.getEnv().equals(env))
+                    .collect(Collectors.toList());
+        } else {
+            QueryFactory queryFactory = Search.getQueryFactory((RemoteCache<?, ?>) deploymentStatuses);
+            return queryFactory.<DeploymentStatus>create("FROM karavan.DeploymentStatus WHERE env = :env")
+                    .setParameter("env", env)
+                    .execute().list();
         }
     }
+
+    public void saveServiceStatus(ServiceStatus status) {
+        serviceStatuses.put(GroupedKey.create(status.getName(), status.getId()), status);
+    }
+
+    public void deleteServiceStatus(ServiceStatus status) {
+        serviceStatuses.remove(GroupedKey.create(status.getName(), status.getId()));
+    }
+
+    public List<ServiceStatus> getServiceStatuses() {
+        return serviceStatuses.values().stream().collect(Collectors.toList());
+    }
+
+    public List<PodStatus> getPodStatuses(String projectId, String env) {
+        if (cacheManager == null) {
+            return podStatuses.values().stream()
+                    .filter(s -> s.getEnv().equals(env) && s.getDeployment().equals(projectId))
+                    .collect(Collectors.toList());
+        } else {
+            QueryFactory queryFactory = Search.getQueryFactory((RemoteCache<?, ?>) podStatuses);
+            return queryFactory.<PodStatus>create("FROM karavan.PodStatus WHERE deployment = :deployment AND env = :env")
+                    .setParameter("deployment", projectId)
+                    .setParameter("env", env)
+                    .execute().list();
+        }
+    }
+
+    public List<PodStatus> getPodStatuses(String env) {
+        if (cacheManager == null) {
+            return podStatuses.values().stream()
+                    .filter(s -> s.getEnv().equals(env))
+                    .collect(Collectors.toList());
+        } else {
+            QueryFactory queryFactory = Search.getQueryFactory((RemoteCache<?, ?>) podStatuses);
+            return queryFactory.<PodStatus>create("FROM karavan.PodStatus WHERE env = :env")
+                    .setParameter("env", env)
+                    .execute().list();
+        }
+    }
+
+    public void savePodStatus(PodStatus status) {
+        podStatuses.put(GroupedKey.create(status.getDeployment(), status.getName()), status);
+    }
+
+    public void deletePodStatus(PodStatus status) {
+        podStatuses.remove(GroupedKey.create(status.getDeployment(), status.getName()));
+    }
+
+    public CamelStatus getCamelStatus(String projectId, String env) {
+        return camelStatuses.get(GroupedKey.create(projectId, env));
+    }
+
+    public List<CamelStatus> getCamelStatuses(String env) {
+        if (cacheManager == null) {
+            return camelStatuses.values().stream()
+                    .filter(s -> s.getEnv().equals(env))
+                    .collect(Collectors.toList());
+        } else {
+            QueryFactory queryFactory = Search.getQueryFactory((RemoteCache<?, ?>) camelStatuses);
+            return queryFactory.<CamelStatus>create("FROM karavan.CamelStatus WHERE env = :env")
+                    .setParameter("env", env)
+                    .execute().list();
+        }
+    }
+    public void saveCamelStatus(CamelStatus status) {
+        camelStatuses.put(GroupedKey.create(status.getProjectId(), status.getEnv()), status);
+    }
+
+    public void deleteCamelStatus(String name, String env) {
+        camelStatuses.remove(GroupedKey.create(name, env));
+    }
+
+    public List<String> getKameletNames() {
+        return kamelets.keySet().stream().collect(Collectors.toList());
+    }
+
+    public String getKameletYaml(String name) {
+        return kamelets.get(name);
+    }
+
+    public void saveKamelet(String name, String yaml) {
+        kamelets.put(name, yaml);
+    }
+
+    public List<Environment> getEnvironments() {
+        return environments.values().stream().collect(Collectors.toList());
+    }
+
+    public void saveEnvironment(Environment environment) {
+        environments.put(environment.getName(), environment);
+    }
+
+
 }

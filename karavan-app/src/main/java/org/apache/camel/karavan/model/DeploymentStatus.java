@@ -3,37 +3,74 @@ package org.apache.camel.karavan.model;
 import org.infinispan.protostream.annotations.ProtoFactory;
 import org.infinispan.protostream.annotations.ProtoField;
 
-import java.util.ArrayList;
-import java.util.List;
-
 public class DeploymentStatus {
+    public static final String CACHE = "deployment_statuses";
     @ProtoField(number = 1)
-    String image;
+    String name;
     @ProtoField(number = 2)
-    Integer replicas;
+    String namespace;
     @ProtoField(number = 3)
-    Integer readyReplicas;
+    String env;
     @ProtoField(number = 4)
+    String cluster;
+    @ProtoField(number = 5)
+    String image;
+    @ProtoField(number = 6)
+    Integer replicas;
+    @ProtoField(number = 7)
+    Integer readyReplicas;
+    @ProtoField(number = 8)
     Integer unavailableReplicas;
-    @ProtoField(number = 5, collectionImplementation = ArrayList.class)
-    List<PodStatus> podStatuses;
 
-
-    public DeploymentStatus() {
+    public DeploymentStatus(String name, String namespace, String cluster, String env) {
+        this.name = name;
+        this.namespace = namespace;
+        this.cluster = cluster;
+        this.env = env;
         this.image = "";
         this.replicas = 0;
         this.readyReplicas = 0;
         this.unavailableReplicas = 0;
-        this.podStatuses = new ArrayList<>(0);
     }
 
     @ProtoFactory
-    public DeploymentStatus(String image, Integer replicas, Integer readyReplicas, Integer unavailableReplicas, List<PodStatus> podStatuses) {
+    public DeploymentStatus(String name, String namespace, String env, String cluster, String image, Integer replicas, Integer readyReplicas, Integer unavailableReplicas) {
+        this.name = name;
+        this.namespace = namespace;
+        this.env = env;
+        this.cluster = cluster;
         this.image = image;
         this.replicas = replicas;
         this.readyReplicas = readyReplicas;
         this.unavailableReplicas = unavailableReplicas;
-        this.podStatuses = podStatuses;
+    }
+
+    public String getId() {
+        return name + ":" + namespace + ":" + cluster;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    public String getEnv() {
+        return env;
+    }
+
+    public void setEnv(String env) {
+        this.env = env;
+    }
+
+    public String getNamespace() {
+        return namespace;
+    }
+
+    public void setNamespace(String namespace) {
+        this.namespace = namespace;
     }
 
     public String getImage() {
@@ -68,11 +105,11 @@ public class DeploymentStatus {
         this.unavailableReplicas = unavailableReplicas;
     }
 
-    public List<PodStatus> getPodStatuses() {
-        return podStatuses;
+    public String getCluster() {
+        return cluster;
     }
 
-    public void setPodStatuses(List<PodStatus> podStatuses) {
-        this.podStatuses = podStatuses;
+    public void setCluster(String cluster) {
+        this.cluster = cluster;
     }
 }

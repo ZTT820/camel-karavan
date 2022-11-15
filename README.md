@@ -9,10 +9,45 @@
 ![karavan-logo](images/karavan-logo-dark.png#gh-dark-mode-only)
 ![karavan-logo](images/karavan-logo-light.png#gh-light-mode-only)
 
+Karavan is an Integration Toolkit for Apache Camel, which makes integration easy and fun through the visualization of pipelines, integration with runtimes and package, image build and deploy to kubernetes out-of-the-box.
 
-Mastering Tool for Apache Camel makes integration easy and fun through the visualization of pipelines, integration with runtimes and package, image build and deploy to kubernetes out-of-the-box.
+![karavan-clouds](images/karavan-clouds.png)
+
+Integrations could be created using visual designer that includes Enterprise Integration Patterns DSL, REST API and Beans builder, all Camel Kamelets and Components. 
+
+Karavan uses YAML (Integration CRD or plain) to read/write integrations.
+
+Integrations could be run directly from Karavan UI using Camel JBang. Also they could exported in Maven project with preconfigured Camel Quarkus, Camel Spring-Boot or Camel Main runtime.
+
+![karavan-about](images/karavan-about.png)
+
+Integration project output is a runnable uber-jar or an OCI image for local environment or a deployed application to a Kubernetes/OpenShift in any cloud provider.
+
+## Installation
+Two types of applications are available: 
+1. [Cloud-native](karavan-cloud/README.md) application deployed into Kubernetes/OpenShift 
+2. [VS Code extension](karavan-vscode/README.md) available on the [Marketplace](https://marketplace.visualstudio.com/items?itemName=camel-karavan.karavan). Extensions for VS Code Compatible Editors available on [Open VSX Registry](https://open-vsx.org/extension/camel-karavan/karavan)
+
+Both applications share same visual designer and work with Camel YAMl DSL.
+
+## Karavan cloud-native application
+Karavan cloud-native integration toolkit is an application to manage projects, design and monitor integrations, Tekton pipeline to build and deploy integrations. More about [cloud-native Karavan](karavan-cloud/README.md)
+
+![karavan-ipaas-1](images/karavan-ipaas-1.png)
+
+
+## Karavan VS Code extension
+Install Karavan VS Code extension from the [Marketplace](https://marketplace.visualstudio.com/items?itemName=camel-karavan.karavan) or from [Open VSX Registry](https://open-vsx.org/extension/camel-karavan/karavan)
+
+More about [Karavan VS Code Extension](karavan-vscode/README.md)
+
+![karavan-vscode](images/karavan-vscode.png)
+
 
 ## Features
+### Mode
+* [Cloud-native](karavan-cloud/README.md)
+* [VS Code extension](karavan-vscode/README.md)
 ### Visual Designer for Integrations
 * Enterprise Integration Patterns DSL
 * REST DSL designer
@@ -22,96 +57,18 @@ Mastering Tool for Apache Camel makes integration easy and fun through the visua
 * 300+ Components consumer/producer
 * Read/Write Integration CRD (*.yaml with kind:Integration) and plain yaml routes
 ### Runtimes
-* [Camel-K](https://camel.apache.org/camel-k/next/index.html)
 * [Camel JBang](https://camel.apache.org/manual/camel-jbang.html)
-* [Camel Quarkus](https://camel.apache.org/camel-quarkus/2.9.x/reference/extensions/yaml-dsl.html)
+* [Camel Quarkus](https://camel.apache.org/camel-quarkus)
+* [Camel Spring-Boot](https://camel.apache.org/camel-spring-boot) (WIP)
+* [Camel Main](https://camel.apache.org/components/3.18.x/others/main.html) (WIP)
 ### Build and Deploy
-* Package uber-jar
-* Build Docker/OCI Image
-* Deploy to Kubernetes/OpenShift
+* Maven for local development
+* Tekton Pipelines for Kubernetes/OpenShift
 ### Documentation
 Build-in catalogues:
 * Enterprise Integration Patterns
 * Kamelets
 * Components
 
-## VS Code extension
-Install Karavan VS Code extension from the [Marketplace](https://marketplace.visualstudio.com/items?itemName=camel-karavan.karavan)
-
-![karavan-vscode](images/karavan-vscode.png)
-
-## Standalone application
-
- Install Karavan Standalone command line: `docker pull ghcr.io/apache/camel-karavan:latest`
-
-![karavan-web](images/karavan-web.png)
-
-## Project structure
-1. Karavan-generator  
-Generate Camel Models and Api from Camel sources to Typescript in Karavan-designer
-2. Karavan-Designer  
-KaravanDesigner UI component and simple web app
-3. Karavan-vscode  
-VS Code extension based on KaravanDesigner
-4. Karavan-app  
-Karavan Application
-5. Karavan-demo  
-Demo of Karavan use cases
-
-
-## How to build
-1. Generate Camel Models and API for Typescript
-```
-mvn clean compile exec:java -Dexec.mainClass="org.apache.camel.karavan.generator.KaravanGenerator" -f karavan-generator
-```
-
-2. Build VS Code extension
-```
-cd  karavan-vscode
-yarn install
-yarn run compile // dev
-yarn run package //prod
-```
-
-3. Build Karavan app  
-- Build JVM Mode
-```
-cd karavan-app
-mvn clean package -Dquarkus.container-image.build=true
-```
-- Build native
-```
-DOCKER_BUILDKIT=1 docker build -f karavan-app/src/main/docker/Dockerfile.multistage -t apache/camel-karavan .
-```
-
-## Development Karavan app
-You can run your application in dev mode that enables live coding using:
-- Backend
-```shell script
-cd karavan-app
-mvn quarkus:dev
-```
-- Frontend
-```shell script
-cd karavan-app/src/main/webapp/
-npm start
-```
-
-## Running in local mode
-- Run JVM Mode
-```shell script
-docker run -it -p 8080:8080 -v $(pwd):/deployments/integrations ghcr.io/apache/camel-karavan:latest
-```
-For SELinux
-```shell script
-docker run -it -p 8080:8080 -v $(pwd):/deployments/integrations:z ghcr.io/apache/camel-karavan:latest
-```
-
-- Run native
-```shell script
-docker run -it -p 8080:8080 -v $(pwd):/deployments/integrations ghcr.io/apache/camel-karavan-native:latest
-```
-For SELinux
-```shell script
-docker run -it -p 8080:8080 -v $(pwd):/deployments/integrations:z ghcr.io/apache/camel-karavan-native:latest
-```
+## Development
+How to build [Karavan](DEV.md)

@@ -19,15 +19,16 @@ import * as fs from 'fs';
 import 'mocha';
 import {CamelDefinitionYaml} from "../src/core/api/CamelDefinitionYaml";
 
+
 describe('bean configuration', () => {
 
     it('Read beans from plain YAML', () => {
-        const yaml = fs.readFileSync('test/beans1.yaml',{encoding:'utf8', flag:'r'});
+        const yaml = fs.readFileSync('test/beans1.yaml', {encoding: 'utf8', flag: 'r'});
         const i = CamelDefinitionYaml.yamlToIntegration("beans.yaml", yaml);
         expect(i.metadata.name).to.equal('beans.yaml');
         expect(i.kind).to.equal('Integration');
         expect(i.spec.flows?.length).to.equal(3);
-        expect(i.crd).to.equal(false);
+        expect(i.type).to.equal('plain');
         if (i.spec.flows) {
             expect(i.spec.flows[2].beans[0].name).to.equal('myNested');
             expect(i.spec.flows[2].beans[0].type).to.equal('${MyBean.class.name}');
@@ -42,7 +43,7 @@ describe('bean configuration', () => {
         expect(i.metadata.name).to.equal('Beans');
         expect(i.kind).to.equal('Integration');
         expect(i.spec.flows?.length).to.equal(3);
-        expect(i.crd).to.equal(true);
+        expect(i.type).to.equal("crd");
         if (i.spec.flows) {
             expect(i.spec.flows[2].beans[0].name).to.equal('myNested');
             expect(i.spec.flows[2].beans[0].type).to.equal('${MyBean.class.name}');

@@ -29,7 +29,10 @@ const baseConfig = (webpackEnv) => {
                 path: require.resolve("path-browserify"),
                 url: require.resolve("url"),
             },
-            extensions: [".ts", ".tsx", ".js"],
+            alias: {
+                core: path.resolve(__dirname, 'webview/core/'),
+              },
+            extensions: ['', ".ts", ".tsx", ".js"],
         },
         module: {
             rules: [
@@ -91,7 +94,7 @@ const baseConfig = (webpackEnv) => {
 const extensionConfig = (webpackEnv) => {
     return {
         ...baseConfig(webpackEnv),
-        target: "node",
+        target:  "node",
         entry: "./src/extension.ts",
         output: {
             path: path.resolve(__dirname, "dist"),

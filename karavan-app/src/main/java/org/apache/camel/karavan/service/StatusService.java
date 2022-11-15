@@ -16,36 +16,34 @@
  */
 package org.apache.camel.karavan.service;
 
-import io.fabric8.tekton.pipeline.v1beta1.PipelineRun;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.quarkus.runtime.configuration.ProfileManager;
 import io.quarkus.vertx.ConsumeEvent;
-import io.smallrye.mutiny.tuples.Tuple4;
 import io.vertx.core.json.JsonObject;
 import io.vertx.mutiny.core.Vertx;
 import io.vertx.mutiny.core.buffer.Buffer;
+import io.vertx.mutiny.core.eventbus.EventBus;
 import io.vertx.mutiny.ext.web.client.HttpResponse;
 import io.vertx.mutiny.ext.web.client.WebClient;
-import org.apache.camel.karavan.model.DeploymentStatus;
-import org.apache.camel.karavan.model.KaravanConfiguration;
-import org.apache.camel.karavan.model.ProjectEnvStatus;
-import org.apache.camel.karavan.model.ProjectStatus;
+import org.apache.camel.karavan.model.CamelStatus;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
-
 
 import javax.enterprise.context.ApplicationScoped;
 import javax.inject.Inject;
-import java.time.Instant;
-import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.stream.Collectors;
 
 @ApplicationScoped
 public class StatusService {
 
     private static final Logger LOGGER = Logger.getLogger(StatusService.class.getName());
-    public static final String CMD_COLLECT_STATUSES = "collect-statuses";
+    public static final String CMD_COLLECT_PROJECT_STATUS = "collect-project-status";
+    public static final String CMD_COLLECT_ALL_STATUSES = "collect-all-statuses";
+    public static final String CMD_SAVE_STATUS = "save-statuses";
 
     @Inject
     InfinispanService infinispanService;
@@ -53,13 +51,19 @@ public class StatusService {
     @Inject
     KubernetesService kubernetesService;
 
-    @Inject
-    KaravanConfiguration configuration;
+    @ConfigProperty(name = "karavan.camel-status-threshold")
+    int threshold;
 
-    private long lastCollect = 0;
+    @ConfigProperty(name = "karavan.environment")
+    String environment;
 
+    private Map<String, Long> lastCollect = new HashMap<>();
+    private ObjectMapper mapper = new ObjectMapper();
     @Inject
     Vertx vertx;
+
+    @Inject
+    EventBus eventBus;
 
     WebClient webClient;
 
@@ -70,68 +74,48 @@ public class StatusService {
         return webClient;
     }
 
-    @ConsumeEvent(value = CMD_COLLECT_STATUSES, blocking = true, ordered = true)
-    public void collectStatuses(String projectId) throws Exception {
-        if ((System.currentTimeMillis() - lastCollect) > configuration.statusThreshold()){
-            getStatuses(projectId);
-            lastCollect = System.currentTimeMillis();
+    @ConsumeEvent(value = CMD_COLLECT_PROJECT_STATUS, blocking = true, ordered = true)
+    public void collectProjectStatus(String projectId) {
+        if ((System.currentTimeMillis() - lastCollect.getOrDefault(projectId, 0L)) > threshold) {
+            collectStatusesForProject(projectId);
+            lastCollect.put(projectId, System.currentTimeMillis());
         }
     }
 
-    private void getStatuses(String projectId) throws Exception {
-        ProjectStatus old = infinispanService.getProjectStatus(projectId);
-        ProjectStatus status = new ProjectStatus();
-        status.setProjectId(projectId);
-        status.setLastUpdate(System.currentTimeMillis());
-        List<ProjectEnvStatus> statuses = new ArrayList<>(1);
-        configuration.environments().stream().filter(e -> e.active()).forEach(e -> {
-            String url = ProfileManager.getActiveProfile().equals("dev")
-                    ? String.format("http://%s-%s.%s/q/health", projectId, e.namespace(), e.cluster())
-                    : String.format("http://%s.%s.%s/q/health", projectId, e.namespace(), e.cluster());
-            ProjectEnvStatus pes = getProjectEnvStatus(url, e.name());
-            DeploymentStatus ds = kubernetesService.getDeploymentStatus(projectId, e.namespace());
-            Tuple4<Boolean, String, String, Long> pipeline = getProjectPipelineStatus(projectId, e.pipeline(), e.namespace());
-
-            pes.setDeploymentStatus(ds);
-
-            if (pipeline.getItem1()){
-                pes.setLastPipelineRun(pipeline.getItem2());
-                pes.setLastPipelineRunResult(pipeline.getItem3());
-                pes.setLastPipelineRunTime(pipeline.getItem4());
-            } else if (old != null){
-                Optional<ProjectEnvStatus> opes = old.getStatuses().stream().filter(x -> x.getEnvironment().equals(e.name())).findFirst();
-                if (opes.isPresent()) {
-                    pes.setLastPipelineRun(opes.get().getLastPipelineRun());
-                    pes.setLastPipelineRunResult(opes.get().getLastPipelineRunResult());
-                }
-            }
-            statuses.add(pes);
-        });
-        status.setStatuses(statuses);
-        infinispanService.saveProjectStatus(status);
+    @ConsumeEvent(value = CMD_COLLECT_ALL_STATUSES, blocking = true, ordered = true)
+    public void collectAllStatuses(String data) {
+        String all = "ALL_PROJECTS";
+        if ((System.currentTimeMillis() - lastCollect.getOrDefault(all, 0L)) > threshold) {
+            infinispanService.getDeploymentStatuses().forEach(d -> eventBus.publish(CMD_COLLECT_PROJECT_STATUS, d.getName()));
+            lastCollect.put(all, System.currentTimeMillis());
+        }
     }
 
-    private Tuple4<Boolean, String, String, Long> getProjectPipelineStatus(String projectId, String pipelineName, String namespace) {
+    @ConsumeEvent(value = CMD_SAVE_STATUS, blocking = true)
+    public void saveStatus(String status) {
         try {
-            PipelineRun pipelineRun = kubernetesService.getLastPipelineRun(projectId, pipelineName, namespace);
-            if (pipelineRun != null) {
-                Instant create = Instant.parse(pipelineRun.getMetadata().getCreationTimestamp());
-                Instant completion = pipelineRun.getStatus().getCompletionTime() != null
-                        ? Instant.parse(pipelineRun.getStatus().getCompletionTime())
-                        : Instant.now();
-
-                long duration = completion.getEpochSecond() - create.getEpochSecond();
-                return Tuple4.of(true, pipelineRun.getMetadata().getName(), pipelineRun.getStatus().getConditions().get(0).getReason(), duration);
-            } else {
-                return Tuple4.of(true,"","Undefined", 0L);
-            }
+            CamelStatus cs = mapper.readValue(status, CamelStatus.class);
+            infinispanService.saveCamelStatus(cs);
         } catch (Exception ex) {
             LOGGER.error(ex.getMessage());
-            return Tuple4.of(false, "", "Undefined", 0L);
         }
     }
 
-    private ProjectEnvStatus getProjectEnvStatus(String url, String env) {
+    private void collectStatusesForProject(String projectId) {
+        LOGGER.info("Collect Camel status for project " + projectId);
+        String url = ProfileManager.getActiveProfile().equals("dev")
+                ? String.format("http://%s-%s.%s/q/health", projectId, kubernetesService.getNamespace(), kubernetesService.getCluster())
+                : String.format("http://%s.%s.%s/q/health", projectId, kubernetesService.getNamespace(), "svc.cluster.local");
+        CamelStatus cs = getCamelStatus(projectId, url);
+        try {
+            String data = mapper.writeValueAsString(cs);
+            eventBus.send(CMD_SAVE_STATUS, data);
+        } catch (Exception ex) {
+            LOGGER.error(ex.getMessage());
+        }
+    }
+
+    private CamelStatus getCamelStatus(String projectId, String url) {
         // TODO: make it reactive
         try {
             HttpResponse<Buffer> result = getWebClient().getAbs(url).timeout(1000).send().subscribeAsCompletionStage().toCompletableFuture().get();
@@ -140,36 +124,30 @@ public class StatusService {
                 List<JsonObject> checks = res.getJsonArray("checks").stream().map(o -> (JsonObject)o).collect(Collectors.toList());
 
                 JsonObject context = checks.stream().filter(o -> Objects.equals(o.getString("name"), "context")).findFirst().get();
-                return new ProjectEnvStatus(
-                        env,
-                        res != null && res.containsKey("status") && res.getString("status").equals("UP") ? ProjectEnvStatus.Status.UP : ProjectEnvStatus.Status.DOWN,
+                return new CamelStatus(
+                        projectId,
                         getStatus(checks, "context"),
                         getStatus(checks, "camel-consumers"),
                         getStatus(checks, "camel-routes"),
                         getStatus(checks, "camel-registry"),
                         context.getJsonObject("data").getString("context.version"),
-                "",
-                "",
-                0L,
-                new DeploymentStatus()
+                        environment
                 );
             } else {
-                return new ProjectEnvStatus(env);
+                return new CamelStatus(projectId, environment);
             }
         } catch (Exception ex) {
             LOGGER.error(ex.getMessage());
-//            ex.printStackTrace();
-            return new ProjectEnvStatus(env);
+            return new CamelStatus(projectId, environment);
         }
     }
 
-    private ProjectEnvStatus.Status getStatus(List<JsonObject> checks, String name){
+    private CamelStatus.Status getStatus(List<JsonObject> checks, String name){
         try {
             JsonObject res = checks.stream().filter(o -> o.getString("name").equals(name)).findFirst().get();
-            return res.getString("status").equals("UP") ? ProjectEnvStatus.Status.UP : ProjectEnvStatus.Status.DOWN;
+            return res.getString("status").equals("UP") ? CamelStatus.Status.UP : CamelStatus.Status.DOWN;
         } catch (Exception e){
-            return ProjectEnvStatus.Status.NA;
+            return CamelStatus.Status.UNDEFINED;
         }
     }
-
 }

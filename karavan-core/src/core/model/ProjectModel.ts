@@ -16,47 +16,6 @@
  */
 import {v4 as uuidv4} from "uuid";
 
-export class StepStatus {
-    status: 'pending' | 'progress' | 'done' | 'error' = 'pending';
-    startTime: number = Date.now();
-    endTime?: number;
-
-    public constructor(init?: Partial<StepStatus>) {
-        Object.assign(this, init);
-    }
-
-    static progress(): StepStatus {
-        return new StepStatus({status: "progress", startTime: Date.now()})
-    }
-
-    static done(stepStatus?: StepStatus): StepStatus | undefined {
-        if (stepStatus){
-            stepStatus.status = "done";
-            stepStatus.endTime = Date.now();
-        }
-        return stepStatus
-    }
-
-    static error(stepStatus?: StepStatus): StepStatus | undefined {
-        if (stepStatus) {
-            stepStatus.status = "error";
-            stepStatus.endTime = Date.now();
-        }
-        return stepStatus
-    }
-}
-
-export class ProjectStatus extends StepStatus{
-    export?: StepStatus;
-    package?: StepStatus;
-    active: boolean = false;
-
-    public constructor(init?: Partial<ProjectStatus>) {
-        super();
-        Object.assign(this, init);
-    }
-}
-
 export class ProjectProperty {
     id: string = ''
     key: string = ''
@@ -72,7 +31,6 @@ export class ProjectProperty {
 }
 
 export class ProjectModel {
-    status: ProjectStatus = new ProjectStatus()
     properties: ProjectProperty[] = []
 
     public constructor(init?: Partial<ProjectModel>) {

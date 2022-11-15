@@ -172,6 +172,7 @@ body, :root, #root, .karavan {
   border: none;
   background: var(--vscode-tab-inactiveBackground);
   color: var(--vscode-input-foreground);
+  margin-bottom: 0;
 }
 
 .vscode-dark .karavan .pf-c-drawer__splitter {
@@ -268,6 +269,11 @@ body, :root, #root, .karavan {
   color: var(--vscode-focusBorder);
 }
 
+.vscode-dark .karavan .properties .object-value {
+  --pf-c-card--BackgroundColor: transparent;
+  border-color: var(--vscode-input-foreground);
+}
+
 /* Popover */
 .vscode-dark .pf-c-popover {
   --pf-c-popover__content--BackgroundColor: var(--vscode-tab-activeBackground);
@@ -297,27 +303,11 @@ body, :root, #root, .karavan {
   color:  var(--vscode-input-foreground);
 }
 
-/* Tour */
-.vscode-dark .reactour__popover {
-  color: var(--vscode-editor-foreground);
-  background-color: var(--vscode-tab-inactiveBackground);
-}
-
-.vscode-dark .reactour__popover [class$="-DefaultArrow"] {
-  color: var(--vscode-editor-foreground);
-}
-
 /* Help */
 .vscode-light .dont-show, 
 .vscode-dark .dont-show {
   margin-right: auto;
 }
-
-/* Tour */
-.vscode-dark .reactour__mask {
-  color: var(--vscode-input-placeholderForeground);
-}
-
 
 /* Kamelets page */
 

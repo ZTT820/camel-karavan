@@ -21,8 +21,8 @@ bin/
 nb-configuration.xml
 
 # Visual Studio Code
-.vscode
 .factorypath
+.vscode
 
 # Typesript
 node_modules
@@ -52,7 +52,22 @@ yarn-error.log*
 /keys/*
 *.jar
 
+**/*.tgz
+**/*.vsix
+**/*.bak
+
+
+/karavan-core/lib/
+
+/karavan-designer/public/kamelets/*
+/karavan-designer/public/components/*
+/karavan-designer/.firebase/
+/karavan-designer/.firebaserc
+/karavan-designer/firebase.json
+
+/karavan-app/.quinoa/
 /karavan-app/karavan-data*
 /karavan-app/src/main/webapp/src/designer/*
 /karavan-app/src/main/resources/kamelets/*
-/karavan-core/lib/
+
+karavan-cloud/karavan-secret-real.yaml

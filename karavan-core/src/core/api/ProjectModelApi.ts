@@ -15,7 +15,6 @@
  * limitations under the License.
  */
 import {ProjectModel, ProjectProperty} from "../model/ProjectModel";
-import {v4 as uuidv4} from "uuid";
 
 export class ProjectModelApi {
 

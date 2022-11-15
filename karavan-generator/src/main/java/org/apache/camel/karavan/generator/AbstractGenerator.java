@@ -56,17 +56,6 @@ public class AbstractGenerator {
         }
     }
 
-    protected String getTraitsYaml() {
-        try {
-            InputStream inputStream = TraitDefinitionGenerator.class.getResourceAsStream("/traits.yaml");
-            String data = new BufferedReader(new InputStreamReader(inputStream))
-                    .lines().collect(Collectors.joining(System.getProperty("line.separator")));
-            return data;
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
     protected String readFileText(String template) {
         Buffer templateBuffer = vertx.fileSystem().readFileBlocking(template);
         return templateBuffer.toString();
@@ -189,6 +178,9 @@ public class AbstractGenerator {
             String ref = properties.getJsonObject(name).getString("$ref");
             ref = ref.equals("#/items/definitions/org.apache.camel.dsl.yaml.deserializers.RouteFromDefinitionDeserializer")
                     ? "#/items/definitions/org.apache.camel.model.FromDefinition"
+                    : ref;
+            ref = ref.equals("#/items/definitions/org.apache.camel.dsl.yaml.deserializers.ErrorHandlerBuilderDeserializer")
+                    ? "#/items/definitions/org.apache.camel.model.ErrorHandlerDefinition"
                     : ref;
             String className = classSimple(ref);
             result.put(className, className.equals("ToDynamicDefinition") ? "toD" : name);

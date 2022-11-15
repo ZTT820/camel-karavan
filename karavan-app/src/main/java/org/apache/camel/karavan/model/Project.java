@@ -1,11 +1,13 @@
 package org.apache.camel.karavan.model;
 
-import org.infinispan.protostream.annotations.ProtoEnumValue;
 import org.infinispan.protostream.annotations.ProtoFactory;
 import org.infinispan.protostream.annotations.ProtoField;
 
 public class Project {
     public static final String CACHE = "projects";
+
+    public static final String NAME_TEMPLATES = "templates";
+    public static final String NAME_KAMELETS = "kamelets";
 
     @ProtoField(number = 1)
     String projectId;
@@ -14,21 +16,13 @@ public class Project {
     @ProtoField(number = 3)
     String description;
     @ProtoField(number = 4)
-    Project.CamelRuntime runtime;
+    String runtime;
     @ProtoField(number = 5)
     String lastCommit;
 
-    public enum CamelRuntime {
-        @ProtoEnumValue(number = 0, name = "Quarkus")
-        QUARKUS,
-        @ProtoEnumValue(number = 1, name = "Spring")
-        SPRING,
-        @ProtoEnumValue(number = 2, name = "Main")
-        MAIN
-    }
 
     @ProtoFactory
-    public Project(String projectId, String name, String description, CamelRuntime runtime, String lastCommit) {
+    public Project(String projectId, String name, String description, String runtime, String lastCommit) {
         this.projectId = projectId;
         this.name = name;
         this.description = description;
@@ -36,7 +30,7 @@ public class Project {
         this.lastCommit = lastCommit;
     }
 
-    public Project(String projectId, String name, String description, CamelRuntime runtime) {
+    public Project(String projectId, String name, String description, String runtime) {
         this.projectId = projectId;
         this.name = name;
         this.description = description;
@@ -70,11 +64,11 @@ public class Project {
         this.description = description;
     }
 
-    public CamelRuntime getRuntime() {
+    public String getRuntime() {
         return runtime;
     }
 
-    public void setRuntime(CamelRuntime runtime) {
+    public void setRuntime(String runtime) {
         this.runtime = runtime;
     }
 

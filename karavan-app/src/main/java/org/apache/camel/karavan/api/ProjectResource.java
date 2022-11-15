@@ -38,7 +38,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-@Path("/project")
+@Path("/api/project")
 public class ProjectResource {
 
     @Inject
@@ -46,8 +46,10 @@ public class ProjectResource {
 
     @GET
     @Produces(MediaType.APPLICATION_JSON)
-    public List<Project> getAll(@HeaderParam("username") String username) throws Exception {
+    public List<Project> getAll() throws Exception {
         return infinispanService.getProjects().stream()
+                .filter(project -> !project.getName().equalsIgnoreCase(Project.NAME_TEMPLATES))
+                .filter(project -> !project.getName().equalsIgnoreCase(Project.NAME_KAMELETS))
                 .sorted(Comparator.comparing(Project::getProjectId))
                 .collect(Collectors.toList());
     }
@@ -55,15 +57,15 @@ public class ProjectResource {
     @GET
     @Produces(MediaType.APPLICATION_JSON)
     @Path("/{project}")
-    public Project get(@HeaderParam("username") String username, @PathParam("project") String project) throws Exception {
+    public Project get(@PathParam("project") String project) throws Exception {
         return infinispanService.getProject(project);
     }
 
     @POST
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
-    public Project save(@HeaderParam("username") String username, Project project) throws Exception {
-        infinispanService.saveProject(project);
+    public Project save(Project project) throws Exception {
+        infinispanService.saveProject(project, false);
         return project;
     }
 
@@ -72,19 +74,20 @@ public class ProjectResource {
     @Path("/{project}")
     public void delete(@HeaderParam("username") String username,
                           @PathParam("project") String project) throws Exception {
-        infinispanService.deleteProject(URLDecoder.decode(project, StandardCharsets.UTF_8.toString()));
+        String projectId = URLDecoder.decode(project, StandardCharsets.UTF_8.toString());
+        infinispanService.getProjectFiles(projectId).forEach(file -> infinispanService.deleteProjectFile(projectId, file.getName()));
+        infinispanService.deleteProject(projectId);
     }
 
     @POST
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
     @Path("/copy/{sourceProject}")
-    public Project copy(@HeaderParam("username") String username, @PathParam("sourceProject") String sourceProject, Project project) throws Exception {
+    public Project copy(@PathParam("sourceProject") String sourceProject, Project project) throws Exception {
 //        Save project
         Project s = infinispanService.getProject(sourceProject);
         project.setRuntime(s.getRuntime());
-        infinispanService.saveProject(project);
-
+        infinispanService.saveProject(project, false);
 //        Copy files
         Map<GroupedKey, ProjectFile> map = infinispanService.getProjectFiles(sourceProject).stream()
                 .collect(Collectors.toMap(f -> new GroupedKey(project.getProjectId(), f.getName()), f -> f));

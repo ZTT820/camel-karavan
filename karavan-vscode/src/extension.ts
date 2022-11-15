@@ -14,7 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import { ExtensionContext, Uri, window, workspace, commands } from 'vscode';
+import { ExtensionContext, Uri, window, workspace, commands, QuickPickItem } from 'vscode';
 import { DesignerView } from "./designerView";
 import { IntegrationView } from "./integrationView";
 import { HelpView } from "./helpView";
@@ -22,7 +22,6 @@ import { selectFileName, inputFileName, OpenApiView, OpenApiItem } from "./opena
 import * as path from "path";
 import * as jbang from "./jbang";
 import * as utils from "./utils";
-import * as fs from "fs";
 
 const KARAVAN_LOADED = "karavan:loaded";
 
@@ -87,15 +86,8 @@ export function activate(context: ExtensionContext) {
     commands.registerCommand('karavan.openComponents', () => helpView.openKaravanWebView("components"));
     commands.registerCommand('karavan.openEip', () => helpView.openKaravanWebView("eip"));
 
-    // Create new Integration CRD command
-    const createCrd = commands.registerCommand("karavan.create-crd", (...args: any[]) => {
-        if (args.length > 0) designer.createIntegration(true, args[0].fsPath)
-        else designer.createIntegration(true, rootPath)
-    });
-    context.subscriptions.push(createCrd);
-
     // Create new Integration YAML command
-    const createYaml = commands.registerCommand("karavan.create-yaml", (...args: any[]) => designer.createIntegration(false, args[0]?.fsPath));
+    const createYaml = commands.registerCommand("karavan.create-yaml", (...args: any[]) => designer.createIntegration("plain", args[0]?.fsPath));
     context.subscriptions.push(createYaml);
 
     // Open integration in designer command
@@ -109,14 +101,46 @@ export function activate(context: ExtensionContext) {
     });
     context.subscriptions.push(openFile);
 
-    // Export to Quarkus or Spring
-    const exportOptions = ["Quarkus", "Spring"];
+    // Create application
+    const applicationCommand = commands.registerCommand("karavan.create-application", (...args: any[]) => {
+        if (rootPath){
+            const defaultRuntime: string = workspace.getConfiguration().get("camel.runtimes") || '';
+            const deployTarget: string = workspace.getConfiguration().get("camel.deployTarget") || 'openshift';
+            const runtimeOptions: QuickPickItem [] = [
+                {label: "quarkus", picked: "quarkus" === defaultRuntime},
+                {label: "spring-boot", picked: "spring-boot" === defaultRuntime}
+            ];
+            const deployOptions: QuickPickItem [] = [
+                {label: "openshift", picked: "openshift" === deployTarget},
+                {label: "kubernetes", picked: "kubernetes" === deployTarget},
+                {label: "none", picked: "none" === deployTarget}
+            ];
+            utils.hasApplicationProperties(rootPath).then(hasAP => {
+                if (hasAP){
+                    window.showInformationMessage("Folder already contains application.properties");
+                } else {
+                    window.showQuickPick(runtimeOptions, { title: "Select Runtime", canPickMany: false }).then((runtime) => {
+                        window.showQuickPick(deployOptions, { title: "Select Deploy Target", canPickMany: false }).then((target) => {
+                            if (runtime && target) inputExportGav(runtime.label, target.label) 
+                        })
+                    })
+                }
+            })
+        } 
+    });
+    context.subscriptions.push(applicationCommand);
+
+    // Export project
     const exportCommand = commands.registerCommand("karavan.jbang-export", (...args: any[]) => {
-        window.showQuickPick(exportOptions, { title: "Select Runtime", canPickMany: false }).then((value) => {
-            if (value) inputExportFolder(value, rootPath);
-        })
+        jbang.camelJbangExport();
     });
     context.subscriptions.push(exportCommand);
+
+    // Deploy project
+    const deployCommand = commands.registerCommand("karavan.deploy", (...args: any[]) => {
+        jbang.camelDeploy(rootPath + path.sep + ".export");
+    });
+    context.subscriptions.push(deployCommand);
 
     // Run Integration in designer command
     const run = commands.registerCommand("karavan.jbang-run-file", (...args: any[]) => designer.jbangRun(args[0].fsPath));
@@ -124,22 +148,11 @@ export function activate(context: ExtensionContext) {
 
     // Run project
     const runProjectCommand = commands.registerCommand("karavan.jbang-run-project", (...args: any[]) => {
-        console.log("RUN PROJECT")
-        utils.getProfiles(rootPath).then(profiles => {
-            console.log("profiles", profiles)
-            if (profiles && profiles.length > 0) {
-                profiles.push("Default");
-                window.showQuickPick(profiles, { title: "Select Profile", canPickMany: false }).then((value) => {
-                    if (value && rootPath) jbang.camelJbangRun(rootPath, value !== "Default" ? value : undefined);
-                })
-            } else {
-                if (rootPath) jbang.camelJbangRun(rootPath);
-            }
-        })
+        jbang.camelJbangRun();
     });
     context.subscriptions.push(runProjectCommand);
 
-    // Generate RST API from OpenAPI specification command
+    // Generate REST API from OpenAPI specification command
     const generateOptions = ["Create new CRD", "Create new YAML", "Add to existing file"];
     const generateRest = commands.registerCommand('karavan.generate-rest', async (...args: any[]) => {
         const openApi: OpenApiItem = args[0];
@@ -153,43 +166,28 @@ export function activate(context: ExtensionContext) {
     });
     context.subscriptions.push(generateRest);
 
+    // Download Image command
+    const downloadImageCommand = commands.registerCommand("karavan.download-image", (...args: any[]) => {
+        designer.downloadImage(args[0].fsPath);
+    });
+    context.subscriptions.push(downloadImageCommand);
+
     // Create issue command
     commands.registerCommand('karavan.reportIssue', () => {
         commands.executeCommand('open', Uri.parse('https://github.com/apache/camel-karavan/issues/new?title=[VS+Code]New+report&template=issue_template.md'));
     });
 }
 
-/**
- * export into folder
- */
-export async function inputExportFolder(runtime: string, rootPath?: string) {
-    window.showInputBox({
-        title: "Export project with " + runtime,
-        ignoreFocusOut: true,
-        prompt: "Export folder name",
-        validateInput: (text: string): string | undefined => {
-            if (!text || text.length === 0) {
-                return 'Name should not be empty';
-            } else {
-                return undefined;
-            }
-        }
-    }).then(folder => {
-        if (folder && rootPath) {
-            const fullPath = rootPath + path.sep + folder;
-            inputExportGav(runtime.toLowerCase(), folder);
-        }
-    });
-}
 
 /**
  * export with gav
  */
-export async function inputExportGav(runtime: string, folder: string) {
+export async function inputExportGav(runtime: string, target: string) {
     window.showInputBox({
         title: "Export project with " + runtime,
         ignoreFocusOut: true,
         prompt: "groupId:artifactId:version",
+        value: utils.defaultGAV(),
         validateInput: (text: string): string | undefined => {
             if (!text || text.length === 0) {
                 return 'Name should not be empty. Format groupId:artifactId:version';
@@ -199,7 +197,7 @@ export async function inputExportGav(runtime: string, folder: string) {
         }
     }).then(gav => {
         if (gav) {
-            jbang.camelJbangExport(runtime.toLowerCase(), folder, gav);
+            utils.createApplicationproperties(runtime, gav, target)
         }
     });
 }

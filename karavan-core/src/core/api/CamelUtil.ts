@@ -16,11 +16,10 @@
  */
 import {
     Integration,
-    CamelElement, Beans, Dependency, CamelElementMeta,
+    CamelElement, Beans
 } from "../model/IntegrationDefinition";
 import {CamelDefinitionApi} from "./CamelDefinitionApi";
 import {KameletDefinition, NamedBeanDefinition, ToDefinition} from "../model/CamelDefinition";
-import {TraitApi} from "../model/TraitDefinition";
 import {KameletApi} from "./KameletApi";
 import {KameletModel, Property} from "../model/KameletModels";
 import {ComponentProperty} from "../model/ComponentModels";
@@ -34,7 +33,6 @@ export class CamelUtil {
         const clone = JSON.parse(JSON.stringify(integration));
         const int: Integration = new Integration({...clone});
         const flows: any[] = [];
-        int.spec.dependencies = int.spec.dependencies?.map(d => this.cloneDependency(d));
         int.spec.flows?.filter((e: any) => e.dslName !== 'Beans')
             .forEach(f => flows.push(CamelDefinitionApi.createStep(f.dslName, f)));
         int.spec.flows?.filter((e: any) => e.dslName === 'Beans')
@@ -44,20 +42,12 @@ export class CamelUtil {
                 flows.push(newBeans);
             });
         int.spec.flows = flows;
-        if (int.spec.traits) int.spec.traits = TraitApi.cloneTrait(int.spec.traits);
         return int;
     }
 
     static cloneStep = (step: CamelElement): CamelElement => {
         const clone = JSON.parse(JSON.stringify(step));
         return CamelDefinitionApi.createStep(step.dslName, clone, true);
-    }
-
-    static cloneDependency = (dependency: Dependency): Dependency => {
-        const clone = JSON.parse(JSON.stringify(dependency));
-        const newDependency = new Dependency(clone);
-        newDependency.uuid = dependency.uuid;
-        return newDependency;
     }
 
     static cloneBean = (bean: NamedBeanDefinition): NamedBeanDefinition => {
@@ -158,6 +148,13 @@ export class CamelUtil {
             : [];
     }
 
+    static getKameletRequiredParameters = (element: any): string[] => {
+        const kamelet = CamelUtil.getKamelet(element)
+        return kamelet
+            ? kamelet.spec.definition.required
+            : [];
+    }
+
     static getComponentProperties = (element: any): ComponentProperty[] => {
         const dslName: string = (element as any).dslName;
         if (dslName === 'ToDynamicDefinition'){
@@ -184,7 +181,7 @@ export class CamelUtil {
             const value = (element as any)[p.name];
             if (p.type === 'string' && (value === undefined || value.trim().length === 0)){
                 result[0] = false;
-                result[1].push("Property " + p.displayName + " is required");
+                result[1].push(p.displayName + " is required");
             } else if (p.type === 'ExpressionDefinition'){
                 const expressionMeta =  CamelMetadataApi.getCamelModelMetadataByClassName('ExpressionDefinition');
                 let expressionCheck = false;
@@ -206,9 +203,20 @@ export class CamelUtil {
                     const value = CamelDefinitionApiExt.getParametersValue(element, p.name, p.kind === 'path');
                    if (value === undefined || value.trim().length === 0){
                        result[0] = false;
-                       result[1].push("Property " + p.displayName + " is required");
+                       result[1].push(p.displayName + " is required");
                    }
                 })
+            } else {
+                const kamelet = this.getKamelet(element);
+                let allSet = true;
+                const filledParameters = Object.keys((element as any).parameters);
+                kamelet?.spec.definition.required?.forEach(name => {
+                    if (!filledParameters.includes(name)) {
+                        allSet = false;
+                        result[1].push(name + " is required");
+                    }
+                })
+                result[0] = allSet;
             }
         }
         return result;
@@ -250,7 +258,7 @@ export class CamelUtil {
 
     static findPlaceholder = (value: string): [boolean, string?] => {
         let result = false;
-        let placeholder = undefined;
+        let placeholder: string | undefined = undefined;
         if (value !== undefined) {
             const val = value.trim();
             result = val.includes("{{") && val.includes("}}");

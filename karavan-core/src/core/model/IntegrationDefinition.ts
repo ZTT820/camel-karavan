@@ -16,35 +16,10 @@
  */
 import {v4 as uuidv4} from 'uuid';
 import {NamedBeanDefinition} from "./CamelDefinition";
-import {Trait} from "./TraitDefinition";
 
-export class Dependency {
-    group: string = '';
-    artifact: string = '';
-    version: string = '';
-    uuid: string = '';
-    dslName: string = '';
-
-    public constructor(init?: Partial<Dependency>) {
-        Object.assign(this, init);
-        this.dslName = 'Dependency';
-        this.uuid = uuidv4();
-    }
-
-    static createNew(url: string): Dependency {
-        const parts = url.split(":");
-        return new Dependency({group:parts[1], artifact:parts[2], version:parts[3]})
-    }
-
-    getFullName(): string {
-        return this.group + ":" + this.artifact + ":" + this.version;
-    }
-}
 
 export class Spec {
     flows?: any[] = [];
-    dependencies?: Dependency[] = [];
-    traits?: Trait;
 
     public constructor(init?: Partial<Spec>) {
         Object.assign(this, init);
@@ -60,24 +35,25 @@ export class Metadata {
 }
 
 export class Integration {
-    apiVersion: string = 'camel.apache.org/v1';
-    kind: string = 'Integration';
+    apiVersion: string = 'camel.apache.org/v1'; // camel.apache.org/v1alpha1
+    kind: string = 'Integration';  // Kamelet
     metadata: Metadata = new Metadata();
     spec: Spec = new Spec();
-    crd: boolean = true;
+    type: 'crd' | 'plain' | 'kamelet' = 'crd';
 
     public constructor(init?: Partial<Integration>) {
         Object.assign(this, init);
     }
 
-    static createNew(name?: string): Integration {
-        return new Integration({metadata: new Metadata({name: name}), spec: new Spec({flows: []})})
+    static createNew(name?: string, type: 'crd' | 'plain' | 'kamelet' = 'crd'): Integration {
+        return new Integration({type: type, metadata: new Metadata({name: name}), spec: new Spec({flows: []})})
     }
 }
 
 export class CamelElement {
     uuid: string = ''
     dslName: string = ''
+    show: boolean = true
 
     constructor(dslName: string) {
         this.uuid = uuidv4()
@@ -106,12 +82,10 @@ export class CamelElementMeta {
     step?: CamelElement
     parentUuid?: string
     position: number = 0;
-    pathUuids: string [] = [];
 
-    constructor(step?: CamelElement, parentUuid?: string, position?: number, pathUuids?: string []) {
+    constructor(step?: CamelElement, parentUuid?: string, position?: number) {
         this.step = step;
         this.parentUuid = parentUuid;
         this.position = position || 0;
-        this.pathUuids = pathUuids || this.pathUuids;
     }
 }

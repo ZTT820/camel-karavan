@@ -31,7 +31,7 @@ import javax.ws.rs.Produces;
 import javax.ws.rs.core.MediaType;
 import java.util.List;
 
-@Path("/git")
+@Path("/api/git")
 public class GitResource {
 
     @Inject
@@ -44,12 +44,12 @@ public class GitResource {
     @POST
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
-    public Project push(@HeaderParam("username") String username, Project project) throws Exception {
+    public Project push(Project project) throws Exception {
         Project p = infinispanService.getProject(project.getProjectId());
         List<ProjectFile> files = infinispanService.getProjectFiles(project.getProjectId());
         String commitId = gitService.commitAndPushProject(p, files);
         p.setLastCommit(commitId);
-        infinispanService.saveProject(p);
+        infinispanService.saveProject(p, false);
         return p;
     }
 }

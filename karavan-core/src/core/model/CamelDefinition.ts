@@ -106,6 +106,8 @@ export class NamedBeanDefinition extends CamelElement {
 }
 
 export class OutputAwareFromDefinition extends CamelElement {
+    description?: string;
+    id?: string;
     parameters?: any = {};
     steps: CamelElement[] = [];
     uri: string = ''
@@ -416,6 +418,8 @@ export class FinallyDefinition extends CamelElement {
 
 export class FromDefinition extends CamelElement {
     stepName?: string = 'from';
+    description?: string;
+    id?: string;
     parameters?: any = {};
     steps: CamelElement[] = [];
     uri: string = ''
@@ -1008,6 +1012,7 @@ export class Resilience4jConfigurationDefinition extends CamelElement {
     slowCallDurationThreshold?: number;
     minimumNumberOfCalls?: number;
     permittedNumberOfCallsInHalfOpenState?: number;
+    throwExceptionWhenHalfOpenOrOpenState?: boolean;
     slowCallRateThreshold?: number;
     stepName?: string = 'resilience4jConfiguration';
     writableStackTraceEnabled?: boolean;
@@ -1105,14 +1110,19 @@ export class RouteContextRefDefinition extends CamelElement {
 }
 
 export class RouteDefinition extends CamelElement {
-    stepName?: string = 'route';
     routeConfigurationId?: string;
     description?: string;
+    logMask?: boolean;
+    precondition?: string;
+    autoStartup?: boolean;
+    trace?: boolean;
+    stepName?: string = 'route';
+    messageHistory?: boolean;
     from: FromDefinition = new FromDefinition();
     streamCaching?: boolean;
     id?: string;
-    precondition?: string;
-    autoStartup?: boolean;
+    startupOrder?: number;
+    routePolicy?: string;
     group?: string
     public constructor(init?: Partial<RouteDefinition>) {
         super('RouteDefinition')
@@ -1135,9 +1145,10 @@ export class RouteTemplateBeanDefinition extends CamelElement {
 }
 
 export class RouteTemplateDefinition extends CamelElement {
+    route?: RouteDefinition;
     stepName?: string = 'routeTemplate';
     beans?: NamedBeanDefinition[] = [];
-    from: FromDefinition = new FromDefinition();
+    from?: FromDefinition;
     id: string = '';
     parameters?: RouteTemplateParameterDefinition[] = []
     public constructor(init?: Partial<RouteTemplateDefinition>) {
@@ -2944,6 +2955,7 @@ export class JsonPathExpression extends CamelElement {
     headerName?: string;
     trim?: boolean;
     expressionName?: string = 'jsonpath';
+    unpackArray?: boolean;
     writeAsString?: boolean;
     id?: string;
     allowSimple?: boolean;
@@ -3064,6 +3076,7 @@ export class XMLTokenizerExpression extends CamelElement {
     headerName?: string;
     trim?: boolean;
     expressionName?: string = 'xtokenize';
+    namespace?: PropertyDefinition[] = [];
     id?: string;
     group?: number
     public constructor(init?: Partial<XMLTokenizerExpression>) {
@@ -3083,6 +3096,7 @@ export class XPathExpression extends CamelElement {
     trim?: boolean;
     objectModel?: string;
     logNamespaces?: boolean;
+    namespace?: PropertyDefinition[] = [];
     threadSafety?: boolean;
     id?: string;
     resultType?: string
@@ -3098,6 +3112,7 @@ export class XQueryExpression extends CamelElement {
     configurationRef?: string;
     trim?: boolean;
     expressionName?: string = 'xquery';
+    namespace?: PropertyDefinition[] = [];
     id?: string;
     type?: string
     public constructor(init?: Partial<XQueryExpression>) {

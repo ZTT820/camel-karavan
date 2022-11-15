@@ -58,6 +58,7 @@ export class Labels {
 export class Annotations {
   'camel.apache.org/kamelet.icon': string | any = '';
   'camel.apache.org/catalog.version': string | any = '';
+  'camel.apache.org/kamelet.support.level': string | any = '';
 
   public constructor(init?: Partial<Annotations>) {
     Object.assign(this, init);
@@ -98,6 +99,10 @@ export class KameletModel {
 
   title(): string {
     return this.spec.definition.title;
+  }
+
+  description(): string {
+    return this.spec.definition.description;
   }
 
   properties(): any {

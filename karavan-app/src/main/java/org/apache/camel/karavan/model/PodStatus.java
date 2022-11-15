@@ -4,32 +4,41 @@ import org.infinispan.protostream.annotations.ProtoFactory;
 import org.infinispan.protostream.annotations.ProtoField;
 
 public class PodStatus {
+    public static final String CACHE = "pod_statuses";
     @ProtoField(number = 1)
     String name;
     @ProtoField(number = 2)
-    Boolean started;
+    String phase;
     @ProtoField(number = 3)
-    Boolean ready;
+    Boolean initialized;
     @ProtoField(number = 4)
-    String reason;
+    Boolean ready;
     @ProtoField(number = 5)
+    String reason;
+    @ProtoField(number = 6)
     String deployment;
+    @ProtoField(number = 7)
+    String env;
 
-    public PodStatus() {
-        this.name = "";
-        this.started = false;
+    public PodStatus(String name, String deployment, String env) {
+        this.name = name;
+        this.phase = "";
+        this.initialized = false;
         this.ready = false;
         this.reason = "";
-        this.deployment = "";
+        this.deployment = deployment;
+        this.env = env;
     }
 
     @ProtoFactory
-    public PodStatus(String name, Boolean started, Boolean ready, String reason, String deployment) {
+    public PodStatus(String name, String phase, Boolean initialized, Boolean ready, String reason, String deployment, String env) {
         this.name = name;
-        this.started = started;
+        this.phase = phase;
+        this.initialized = initialized;
         this.ready = ready;
         this.reason = reason;
         this.deployment = deployment;
+        this.env = env;
     }
 
     public String getName() {
@@ -40,12 +49,20 @@ public class PodStatus {
         this.name = name;
     }
 
-    public Boolean getStarted() {
-        return started;
+    public String getPhase() {
+        return phase;
     }
 
-    public void setStarted(Boolean started) {
-        this.started = started;
+    public void setPhase(String phase) {
+        this.phase = phase;
+    }
+
+    public Boolean getInitialized() {
+        return initialized;
+    }
+
+    public void setInitialized(Boolean initialized) {
+        this.initialized = initialized;
     }
 
     public Boolean getReady() {
@@ -70,5 +87,13 @@ public class PodStatus {
 
     public void setDeployment(String deployment) {
         this.deployment = deployment;
+    }
+
+    public String getEnv() {
+        return env;
+    }
+
+    public void setEnv(String env) {
+        this.env = env;
     }
 }

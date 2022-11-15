@@ -16,82 +16,37 @@
  */
 package org.apache.camel.karavan.api;
 
-import io.vertx.core.Vertx;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
+import org.apache.camel.karavan.service.CodeService;
+import org.apache.camel.karavan.service.InfinispanService;
 
 import javax.inject.Inject;
 import javax.ws.rs.GET;
 import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
 import javax.ws.rs.core.MediaType;
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.nio.file.Files;
-import java.nio.file.Paths;
 import java.util.List;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
-@Path("/kamelet")
+@Path("/api/kamelet")
 public class KameletResources {
 
-
-    @ConfigProperty(name = "karavan.folder.kamelets")
-    String kameletsCustom;
+    @Inject
+    InfinispanService infinispanService;
 
     @Inject
-    Vertx vertx;
-
-    @GET
-    @Produces(MediaType.APPLICATION_JSON)
-    public List<String> getList() throws Exception {
-        List<String> kameletList = getBuildInKameletsList();
-        if (Files.exists(Paths.get(kameletsCustom))) {
-            List<String> customKameletList = getCustomKamelets();
-            kameletList.addAll(customKameletList);
-        }
-        return kameletList;
-    }
-
-    private List<String> getBuildInKameletsList() {
-        String list = getResourceFile("kamelets.properties");
-        return List.of(list.split(System.getProperty("line.separator"))).stream()
-                .map(s -> s + ".kamelet.yaml").collect(Collectors.toList());
-    }
-
-    private String getResourceFile(String path) {
-        try {
-            InputStream inputStream = KameletResources.class.getResourceAsStream("/kamelets/" + path);
-            String data = new BufferedReader(new InputStreamReader(inputStream))
-                    .lines().collect(Collectors.joining(System.getProperty("line.separator")));
-            return data;
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-
-    private List<String> getCustomKamelets() {
-        return vertx.fileSystem().readDirBlocking(Paths.get(kameletsCustom).toString())
-                .stream()
-                .filter(s -> s.endsWith(".yaml"))
-                .map(s -> {
-                    String[] parts = s.split(Pattern.quote(File.separator));
-                    return parts[parts.length - 1];
-                }).collect(Collectors.toList());
-    }
+    CodeService codeService;
 
     @GET
     @Produces(MediaType.TEXT_PLAIN)
-    @Path("/{name}")
-    public String getYaml(@PathParam("name") String name) {
-        if (Files.exists(Paths.get(kameletsCustom, name))) {
-            return vertx.fileSystem().readFileBlocking(Paths.get(kameletsCustom, name).toString()).toString();
-        } else {
-            return getResourceFile(name);
+    public String getCustomYamls() {
+        StringBuilder kamelets = new StringBuilder(codeService.getResourceFile("/kamelets/kamelets.yaml"));
+        List<String> customKameletNames = infinispanService.getKameletNames();
+        if (customKameletNames.size() > 0) {
+            kamelets.append("\n---\n");
+            kamelets.append(infinispanService.getKameletNames().stream()
+                    .map(name -> infinispanService.getKameletYaml(name))
+                    .collect(Collectors.joining("\n---\n")));
         }
+        return kamelets.toString();
     }
 }

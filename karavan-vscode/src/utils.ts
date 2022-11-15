@@ -16,8 +16,12 @@
  */
 import * as path from "path";
 import { workspace, Uri, window, ExtensionContext, FileType} from "vscode";
-import { CamelDefinitionYaml } from "karavan-core/lib/api/CamelDefinitionYaml";
-import { ProjectModelApi } from "karavan-core/lib/api/ProjectModelApi";
+import { CamelDefinitionYaml } from "core/api/CamelDefinitionYaml";
+
+export function getRoot(): string | undefined {
+    return (workspace.workspaceFolders && (workspace.workspaceFolders.length > 0))
+        ? workspace.workspaceFolders[0].uri.fsPath : undefined;
+}
 
 export function save(relativePath: string, text: string) {
     if (workspace.workspaceFolders) {
@@ -41,8 +45,7 @@ export function getRalativePath(fullPath: string): string {
 }
 
 export async function readKamelets(context: ExtensionContext) {
-    const dir = path.join(context.extensionPath, 'kamelets');
-    const yamls: string[] = await readFilesInDirByExtension(dir, "yaml");
+    const yamls: string[] = await readBuildInKamelets(context);
     const kameletsPath: string | undefined = workspace.getConfiguration().get("Karavan.kameletsPath");
     if (kameletsPath && kameletsPath.trim().length > 0) {
         const kameletsDir = path.isAbsolute(kameletsPath) ? kameletsPath : path.resolve(kameletsPath);
@@ -52,12 +55,21 @@ export async function readKamelets(context: ExtensionContext) {
     return yamls;
 }
 
+async function readBuildInKamelets(context: ExtensionContext) {
+    const kameletsPath = path.join(context.extensionPath, 'kamelets', "kamelets.yaml");
+    const result: string[] = [];
+    const file = await readFile(kameletsPath);
+    const code = Buffer.from(file).toString('utf8');
+    code.split("\n---\n").map(c => c.trim()).forEach(z => result.push(z));
+    return result;
+}
+
 async function readFilesInDirByExtension(dir: string, extension: string) {
     const result: string[] = [];
     const dirs: [string, FileType][] = await readDirectory(dir);
     for (let d in dirs) {
         const filename = dirs[d][0];
-        if (filename.endsWith(extension)){
+        if (filename !== undefined && filename.endsWith(extension)){
             const file = await readFile(dir + "/" + filename);
             const code = Buffer.from(file).toString('utf8');
             result.push(code);
@@ -67,8 +79,12 @@ async function readFilesInDirByExtension(dir: string, extension: string) {
 }
 
 export async function readComponents(context: ExtensionContext) {
-    const dir = path.join(context.extensionPath, 'components');
-    const jsons: string[] = await readFilesInDirByExtension(dir, "json");
+    const componentsPath = path.join(context.extensionPath, 'components', 'components.json');
+    const file = await readFile(componentsPath);
+    const code = Buffer.from(file).toString('utf8');
+    const components: [] = JSON.parse(code);
+    const jsons: string[] = [];
+    components.forEach(c => jsons.push(JSON.stringify(c)));
     return jsons;
 }
 
@@ -79,11 +95,6 @@ export function parceYaml(filename: string, yaml: string): [boolean, string?] {
     } else {
         return [false, undefined];
     }
-}
-
-export function disableStartHelp() {
-    const config = workspace.getConfiguration();
-    config.update("Karavan.showStartHelp", false);
 }
 
 export function toCliFilename(filename: string): string {
@@ -121,6 +132,10 @@ export async function getYamlFiles(baseDir: string) {
     return result;
 }
 
+export async function hasApplicationProperties(baseDir: string) {
+    return (await getPropertyFiles(baseDir)).includes(baseDir + path.sep + 'application.properties');
+}
+
 export async function getPropertyFiles(baseDir: string) {
     const result: string[] = [];
     (await getAllFiles(baseDir, [])).filter(f => f.endsWith(".properties")).forEach(f => {
@@ -153,6 +168,8 @@ export async function getIntegrationFiles(baseDir: string) {
 
 
 export async function getProperties(rootPath?: string) {
+    if (rootPath === undefined)
+        rootPath = (workspace.workspaceFolders && (workspace.workspaceFolders.length > 0)) ? workspace.workspaceFolders[0].uri.fsPath : undefined;
     if (rootPath) {
         const readData = await readFile(path.resolve(rootPath, "application.properties"));
         return Buffer.from(readData).toString('utf8');
@@ -162,10 +179,27 @@ export async function getProperties(rootPath?: string) {
     }
 }
 
-export async function getProfiles(rootPath?: string) {
-    const text = await getProperties(rootPath);
-    const project = ProjectModelApi.propertiesToProject(text);
-    return ProjectModelApi.getProfiles(project.properties);
+export async function getProperty(name: string) {
+    const properties = await getProperties();
+    const props = properties.split("\n");
+    for (var p of props){
+        const pair = p.split("=");
+        if (pair[0] === name) {
+            return pair[1];
+        }
+    }
+}
+
+export async function getRuntime() {
+    return getProperty("camel.jbang.runtime");
+;}
+
+export async function getTarget() {
+    return getProperty('camel.karavan.target');
+}
+
+export async function getExportFolder() {
+    return getProperty('camel.jbang.exportDir');
 }
 
 export async function stat(fullPath: string) {
@@ -190,4 +224,42 @@ export async function write(fullPath: string, code: string) {
         value => {}, 
         reason => window.showErrorMessage("Error: " + reason) 
     );
+}
+
+export function capitalize (text) {
+    return text.charAt(0).toUpperCase() + text.slice(1).toLowerCase();
+}
+
+export function defaultGAV (): string | undefined {
+    const groupId = workspace.getConfiguration().get("Karavan.defaultGroupId");
+    const artifact = currentFolderName();
+    return groupId + ":" + artifact + ":1";
+}
+
+export function currentFolderName (): string | undefined {
+    if (workspace.workspaceFolders) {
+        const uriFolder: Uri = workspace.workspaceFolders[0].uri;
+        const parts = uriFolder.fsPath.split(path.sep);
+        const name = parts.at(parts.length -1) || '';
+        return name;
+    }
+}
+
+export async function createApplicationproperties(runtime: string, gav: string, target: string ) {
+    if (workspace.workspaceFolders) {
+        const uriFolder: Uri = workspace.workspaceFolders[0].uri;
+        const name = currentFolderName() || "";
+
+        const props: string [] = workspace.getConfiguration().get("Karavan.applicationProperties") || [];
+        const runtimeProps: string [] = workspace.getConfiguration().get("Karavan.".concat(runtime.replaceAll("-", "")).concat(capitalize(target)).concat("Properties")) || [];
+
+        const text = props.concat(runtimeProps).map(v => {
+            if (v.includes('$NAME')) return v.replace('$NAME', name)
+            else if (v.includes('$GAV')) return v.replace('$GAV', gav)
+            else if (v.includes('$RUNTIME')) return v.replace('$RUNTIME', runtime)
+            else if (v.includes('$TARGET')) return v.replace('$TARGET', target)
+            else return v;
+        }).join('\n');
+        write(path.join(uriFolder.path, "application.properties"), text);
+    }
 }

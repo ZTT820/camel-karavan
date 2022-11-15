@@ -16,70 +16,64 @@
  */
 package org.apache.camel.karavan.service;
 
+import io.quarkus.runtime.ShutdownEvent;
 import io.quarkus.runtime.StartupEvent;
-import io.quarkus.vertx.ConsumeEvent;
-import io.smallrye.mutiny.tuples.Tuple2;
-import org.apache.camel.karavan.model.KaravanConfiguration;
-import org.apache.camel.karavan.model.Project;
-import org.apache.camel.karavan.model.ProjectFile;
+import io.vertx.core.eventbus.EventBus;
+import org.apache.camel.karavan.model.Environment;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
 import javax.enterprise.context.ApplicationScoped;
 import javax.enterprise.event.Observes;
 import javax.inject.Inject;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
 
 @ApplicationScoped
 public class KaravanService {
 
     private static final Logger LOGGER = Logger.getLogger(KaravanService.class.getName());
-    public static final String IMPORT_PROJECTS = "import-projects";
 
     @Inject
     InfinispanService infinispanService;
 
     @Inject
-    GitService gitService;
-
-    @ConfigProperty(name = "karavan.config.runtime")
-    String runtime;
+    KubernetesService kubernetesService;
 
     @Inject
-    KaravanConfiguration configuration;
+    EventBus bus;
+
+    @ConfigProperty(name = "karavan.environment")
+    String environment;
 
     void onStart(@Observes StartupEvent ev) {
+        LOGGER.info("Start Karavan");
+        infinispanService.start();
+        setEnvironment();
+        initialImport();
+//        startInformers();
     }
 
-    @ConsumeEvent(value = IMPORT_PROJECTS, blocking = true)
-    void importProjects(String data) {
-        LOGGER.info("Import projects from Git");
-        try {
-            List<Tuple2<String, Map<String, String>>> repo = gitService.readProjectsFromRepository();
-            repo.forEach(p -> {
-                String folderName = p.getItem1();
-                String name = Arrays.stream(folderName.split("-")).map(s -> capitalize(s)).collect(Collectors.joining(" "));
-                Project project = new Project(folderName, name, name, Project.CamelRuntime.valueOf(runtime.toUpperCase()), "");
-                infinispanService.saveProject(project);
-                p.getItem2().forEach((key, value) -> {
-                    ProjectFile file = new ProjectFile(key, value, folderName);
-                    infinispanService.saveProjectFile(file);
-                });
-            });
-        } catch (Exception e) {
-            LOGGER.error("Error during project import", e);
+    void onStop(@Observes ShutdownEvent ev) {
+        LOGGER.info("Stop Karavan");
+        bus.publish(KubernetesService.STOP_INFORMERS, "");
+    }
+
+    void setEnvironment() {
+        String cluster = kubernetesService.getCluster();
+        String namespace = kubernetesService.getNamespace();
+        infinispanService.saveEnvironment(new Environment(environment, cluster, namespace));
+    }
+
+    void initialImport() {
+        if (infinispanService.getProjects().isEmpty()) {
+            LOGGER.info("No projects found in the Data Grid");
+            bus.publish(ImportService.IMPORT_PROJECTS, "");
+        } else {
+            bus.publish(ImportService.IMPORT_TEMPLATES, "");
         }
+        bus.publish(ImportService.IMPORT_KAMELETS, "");
     }
 
-    private static String capitalize(String str) {
-        if(str == null || str.isEmpty()) {
-            return str;
-        }
-
-        return str.substring(0, 1).toUpperCase() + str.substring(1);
+    void startInformers() {
+        bus.publish(KubernetesService.START_INFORMERS, "");
     }
-
 }
